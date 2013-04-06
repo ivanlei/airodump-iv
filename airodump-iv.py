@@ -1,5 +1,5 @@
 """
-airmon-iv is a utility which sniffs 802.11X activity
+airdump-iv is a utility which sniffs 802.11X activity
 
 The goal of this script is to aggregate the functionality of tools like
 airmon-ng and airodump-ng into a single easily extendable python tool.
@@ -12,13 +12,12 @@ import sys
 import traceback
 
 from array import array
-from functools import partial
+from datetime import datetime
 from optparse import OptionParser
 from random import randint
 from scapy.all import sniff
 from scapy.utils import PcapReader
-#from scapy.fields import BitField, EnumField, FieldListField, LEFieldLenField, LEShortField, StrFixedLenField
-from scapy.fields import *
+from scapy.fields import array, BitField, EnumField, FieldListField, LEFieldLenField, LEShortField, StrFixedLenField
 from scapy.layers.dot11 import Dot11, Dot11Auth, Dot11Beacon, Dot11Elt, Dot11ProbeReq, Dot11ProbeResp, RadioTap
 from scapy.packet import bind_layers, Packet
 from struct import unpack
@@ -270,6 +269,7 @@ class Dot11ScannerOptions:
 		self.channel_hop = True
 		self.max_channel = 11
 		self.input_file = None
+		self.enable_curses = True
 
 	@staticmethod
 	def create_scanner_options():
@@ -289,6 +289,8 @@ class Dot11ScannerOptions:
 						  help='Print verbose information')
 		parser.add_option('--verbose-level', dest='verbose_level', default=0, type='int',
 						  help='Level of verbosity')
+		parser.add_option('--no-curses', dest='no_curses', default=False, action='store_true',
+		                  help='Do not enable curses display')
 		options, _ = parser.parse_args()
 
 		scanner_options = Dot11ScannerOptions()
@@ -297,6 +299,7 @@ class Dot11ScannerOptions:
 		scanner_options.channel_hop = (-1 == options.channel and not options.input_file)
 		scanner_options.packet_count = options.packet_count
 		scanner_options.input_file = options.input_file
+		scanner_options.enable_curses = not options.no_curses
 
 		if options.verbose:
 			options.verbose_level = 1
@@ -417,12 +420,15 @@ class Station:
 
 class Dot11Scanner:
 
-	def __init__(self, iface, window):
-		self.iface = iface
+	def __init__(self, scanner_options, window=None):
+		self.scanner_options = scanner_options
 		self.access_points = dict()
 		self.stations = dict()
 		self.bssid_to_essid = dict()
-		self.display = Display(window, self)
+		if window:
+			self.display = Display(window, self)
+		else:
+			self.display = None
 
 	def _update_access_points(self, packet, channel=-1):
 		show = False
@@ -462,27 +468,23 @@ class Dot11Scanner:
 
 		return station
 
-	def _filter_function(
-			self,
-			packet,
-			scanner_options=None
-	):
+	def _filter_function(self, packet):
 		try:
 			# Verify the RadioTap header
 			if packet.haslayer(RadioTap):
-				assert (scanner_options.input_file or (scanner_options.channel == packet[RadioTap].channel()))
+				assert (self.scanner_options.input_file or (self.scanner_options.channel == packet[RadioTap].channel()))
 
 			# Track AP and STA
 			if packet.haslayer(Dot11):
 				ap = None
 				if packet.haslayer(Dot11Beacon):
-					ap = self._update_access_points(packet, channel=scanner_options.channel)
+					ap = self._update_access_points(packet, channel=self.scanner_options.channel)
 
 				elif any(packet.haslayer(layer) for layer in [Dot11ProbeReq, Dot11ProbeResp, Dot11Auth]):
-					ap = self._update_access_points(packet, channel=scanner_options.channel)
+					ap = self._update_access_points(packet, channel=self.scanner_options.channel)
 					sta = self._update_stations(packet)
 
-				if ap:
+				if self.display and ap:
 					self.display.update(ap)
 
 				return True
@@ -495,27 +497,33 @@ class Dot11Scanner:
 		finally:
 			return False
 
-	def scan(self, scanner_options):
+	def seconds_elapsed(self):
+		td = datetime.now() - self.start_time
+		return (td.microseconds + (td.seconds + td.days * 24 * 3600) * 10**6) / 10**6
+
+	def scan(self):
+		self.start_time = datetime.now()
+
 		timeout = None
 
-		if scanner_options.channel_hop:
-			scanner_options.channel = randint(1, scanner_options.max_channel)
-			self.set_channel(scanner_options.channel)
+		if self.scanner_options.channel_hop:
+			self.scanner_options.channel = randint(1, self.scanner_options.max_channel)
+			self.set_channel(self.scanner_options.channel)
 			timeout = 5
-		elif -1 != scanner_options.channel:
-			self.set_channel(scanner_options.channel)
+		elif -1 != self.scanner_options.channel:
+			self.set_channel(self.scanner_options.channel)
 
 		while True:
 			try:
-				sniff(iface=self.iface,
+				sniff(iface=self.scanner_options.iface,
 					  store=False,
-					  count=scanner_options.packet_count,
-					  offline=scanner_options.input_file,
+					  count=self.scanner_options.packet_count,
+					  offline=self.scanner_options.input_file,
 					  timeout=timeout,
-					  lfilter=partial(self._filter_function, scanner_options=scanner_options))
+					  lfilter=self._filter_function)
 				if timeout:
-					scanner_options.channel = ((scanner_options.channel + 3) % scanner_options.max_channel) + 1
-					self.set_channel(scanner_options.channel)
+					self.scanner_options.channel = ((self.scanner_options.channel + 3) % self.scanner_options.max_channel) + 1
+					self.set_channel(self.scanner_options.channel)
 				else:
 					break
 			except KeyboardInterrupt:
@@ -523,7 +531,9 @@ class Dot11Scanner:
 
 	def set_channel(self, channel):
 		Printer.verbose('CHAN: set_channel %d' % channel, verbose_level=3)
-		call('/sbin/iwconfig %s channel %d' % (self.iface, channel), shell=True)
+		call('/sbin/iwconfig %s channel %d' % (self.scanner_options.iface, channel), shell=True)
+		if self.display:
+			self.display.update_header()
 
 	def print_results(self):
 		Printer.write('\n\n')
@@ -539,7 +549,7 @@ class Display:
 	def __init__(self, window, scanner):
 		self.window = window
 		self.scanner = scanner
-		self.free_row = 1
+		self.free_row = 2
 
 		# not all terminals offer curs_set to adjust cursor visibility
 		try:
@@ -552,9 +562,21 @@ class Display:
 
 		self.window.clear()
 		header = '{0:<18} {1:>4} {2:<7} {3:2} {4:<4} {5:<6} {6:<4} {7:3} {8:<32}'.format('BSSID', 'PWR', 'BEACONS', 'CH', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID')
-		self.window.addstr(self.free_row, 0, header)
+		self.addstr(self.free_row, header)
 		self.free_row += 2
 		self.window.refresh()
+
+	def addstr(self, row, msg):
+		self.window.addstr(row, 0, msg)
+		self.window.clrtoeol()
+		self.window.move(0,0)
+
+	def update_header(self):
+		header = ' CH {0:>2d}][ Elapsed {1:d}s][ {2:s}'.format(
+			self.scanner.scanner_options.channel,
+			self.scanner.seconds_elapsed(),
+		    datetime.now().strftime('%x %X'))
+		self.addstr(0, header)
 
 	def update(self, access_point):
 
@@ -564,26 +586,39 @@ class Display:
 			self.free_row += 1
 
 		# Update a full line and don't leave the cursor at the end of the line
-		self.window.addstr(access_point.display_row, 0, access_point.show(bssid_to_essid=self.scanner.bssid_to_essid))
-		self.window.clrtoeol()
-		self.window.move(0, 0)
+		self.addstr(access_point.display_row, access_point.show(bssid_to_essid=self.scanner.bssid_to_essid))
+
+		# Update Headers
+		self.update_header()
 
 		# Repaint
 		self.window.refresh()
 
-def main(window):
+scanner_options = None
 
-	scanner = None
+def main():
 	scanner_options = Dot11ScannerOptions.create_scanner_options()
 
+	def run_scan(window=None):
+		try:
+			scanner = Dot11Scanner(scanner_options, window)
+			scanner.scan()
+		except Exception, e:
+			Printer.exception(e)
+		finally:
+			if scanner:
+				scanner.print_results()
+
 	try:
-		scanner = Dot11Scanner(scanner_options.iface, window)
-		scanner.scan(scanner_options)
+		if scanner_options.enable_curses:
+			curses.wrapper(run_scan)
+		else:
+			run_scan()
+
 	except Exception, e:
-		Printer.exception(e)
-	finally:
-		if scanner:
-			scanner.print_results()
+		sys.stderr.write(repr(e))
+		traceback.print_exc(file=sys.stderr)
+
 
 if __name__ == '__main__':
-	curses.wrapper(main)
+	main()
