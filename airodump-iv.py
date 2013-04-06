@@ -16,13 +16,11 @@ from datetime import datetime
 from optparse import OptionParser
 from random import randint
 from scapy.all import sniff
-from scapy.utils import PcapReader
 from scapy.fields import array, BitField, EnumField, FieldListField, LEFieldLenField, LEShortField, StrFixedLenField
 from scapy.layers.dot11 import Dot11, Dot11Auth, Dot11Beacon, Dot11Elt, Dot11ProbeReq, Dot11ProbeResp, RadioTap
-from scapy.packet import bind_layers, Packet
+from scapy.packet import Packet
 from struct import unpack
 from subprocess import call
-from traceback import format_tb
 
 
 DEFAULT_BSSID = 'ff:ff:ff:ff:ff:ff' # default BSSID when real BSSID is unknown
@@ -482,7 +480,7 @@ class Dot11Scanner:
 
 				elif any(packet.haslayer(layer) for layer in [Dot11ProbeReq, Dot11ProbeResp, Dot11Auth]):
 					ap = self._update_access_points(packet, channel=self.scanner_options.channel)
-					sta = self._update_stations(packet)
+					self._update_stations(packet)
 
 				if self.display and ap:
 					self.display.update(ap)
