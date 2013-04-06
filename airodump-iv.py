@@ -7,11 +7,11 @@ airmon-ng and airodump-ng into a single easily extendable python tool.
 Current functionality mimics airodump-ng for the most part.
 """
 import curses
+import errno
 import scapy
 import sys
 import traceback
 
-from array import array
 from datetime import datetime
 from optparse import OptionParser
 from random import randint
@@ -524,8 +524,17 @@ class Dot11Scanner:
 					self.set_channel(self.scanner_options.channel)
 				else:
 					break
+
+			# Exit the scan on a keyboard break
 			except KeyboardInterrupt:
 				break
+
+			# Curses generates system interupt exception (EINTR) when the window is resized
+			except Exception, e:
+				if e.args and e.args[0] == errno.EINTR:
+					pass
+				else:
+					raise
 
 	def set_channel(self, channel):
 		Printer.verbose('CHAN: set_channel %d' % channel, verbose_level=3)
@@ -548,6 +557,8 @@ class Display:
 		self.window = window
 		self.scanner = scanner
 		self.free_row = 2
+
+		curses.use_default_colors()
 
 		# not all terminals offer curs_set to adjust cursor visibility
 		try:
