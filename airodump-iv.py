@@ -16,14 +16,35 @@ from datetime import datetime
 from optparse import OptionParser
 from random import randint
 from scapy.all import sniff
-from scapy.fields import array, BitField, EnumField, FieldListField, LEFieldLenField, LEShortField, StrFixedLenField
-from scapy.layers.dot11 import Dot11, Dot11Auth, Dot11Beacon, Dot11Elt, Dot11ProbeReq, Dot11ProbeResp, RadioTap
+from scapy.fields import array
+from scapy.fields import BitField
+from scapy.fields import ByteField
+from scapy.fields import ConditionalField
+from scapy.fields import EnumField
+from scapy.fields import Field
+from scapy.fields import FieldLenField
+from scapy.fields import FieldListField
+from scapy.fields import FlagsField
+from scapy.fields import LEFieldLenField
+from scapy.fields import LEIntField
+from scapy.fields import LELongField
+from scapy.fields import LEShortField
+from scapy.fields import StrField
+from scapy.fields import StrFixedLenField
+from scapy.layers.dot11 import Dot11
+from scapy.layers.dot11 import Dot11Auth
+from scapy.layers.dot11 import Dot11Beacon
+from scapy.layers.dot11 import Dot11Elt
+from scapy.layers.dot11 import Dot11ProbeReq
+from scapy.layers.dot11 import Dot11ProbeResp
+from scapy.layers.dot11 import RadioTap
 from scapy.packet import Packet
 from struct import unpack
 from subprocess import call
 
 
-DEFAULT_BSSID = 'ff:ff:ff:ff:ff:ff' # default BSSID when real BSSID is unknown
+# default BSSID when real BSSID is unknown
+DEFAULT_BSSID = 'ff:ff:ff:ff:ff:ff'
 
 class Printer:
 	"""A class for printing messages that respects verbosity levels"""
@@ -73,67 +94,50 @@ def scapy_fields_FieldListField_i2repr(self, pkt, x):
 FieldListField.i2repr = scapy_fields_FieldListField_i2repr
 del scapy_fields_FieldListField_i2repr
 
-# Field lens and data types found on:
-# http://www.radiotap.org/defined-fields
-scapy.layers.dot11.RadioTap.present_fields_with_len = [
-	('TSFT',              8, '<Q'),
-	('Flags',             1, '<B'),
-	('Rate',              1, '<B'),
-	('Channel',           4, '<HH'),
-	('FHSS',              2, '<BB'),
-	('dBm_AntSignal',     1, '<b'),
-	('dBm_AntNoise',      1, '<b'),
-	('Lock_Quality',      2, '<H'),
-	('TX_Attenuation',    2, '<H'),
-	('dB_TX_Attenuation', 2, '<H'),
-	('dBm_TX_Power',      1, '<b'),
-	('Antenna',           1, '<B'),
-	('dB_AntSignal',      1, '<B'),
-	('dB_AntNoise',       1, '<B')
+class SignedByteField(Field):
+	def __init__(self, name, default):
+		Field.__init__(self, name, default, '<b')
+
+class ChannelFromMhzField(LEShortField):
+	def m2i(self, pkt, x):
+		return min(14, max(1, (x - 2407) / 5))
+
+# TODO(ivanlei): This fields_desc does not cover all bits or chained present flags
+# decode will fail in these cases
+scapy.layers.dot11.RadioTap.fields_desc = [
+	ByteField('version', 0),
+	ByteField('pad', 0),
+	FieldLenField('len', None, 'notdecoded', '<H', adjust=lambda pkt,x:x+8),
+	FlagsField('present', None, -32, ['TSFT','Flags','Rate','Channel','FHSS','dBm_AntSignal',
+									  'dBm_AntNoise','Lock_Quality','TX_Attenuation','dB_TX_Attenuation',
+									  'dBm_TX_Power', 'Antenna', 'dB_AntSignal', 'dB_AntNoise',
+									  'b14', 'b15','b16','b17','b18','b19','b20','b21','b22','b23',
+									  'b24','b25','b26','b27','b28','b29','b30','Ext']),
+	ConditionalField(LELongField('TSFT', 0), lambda pkt: pkt.hasflag('present', 'TSFT')),
+	ConditionalField(ByteField('Flags', 0), lambda pkt: pkt.hasflag('present', 'Flags')),
+	ConditionalField(ByteField('Rate', 0), lambda pkt: pkt.hasflag('present', 'Rate')),
+	ConditionalField(ChannelFromMhzField('Channel', 0), lambda pkt: pkt.hasflag('present', 'Channel')),
+	ConditionalField(LEShortField('Channel_flags', 0), lambda pkt: pkt.hasflag('present', 'Channel')),
+	ConditionalField(ByteField('FHSS_hop_set', 0), lambda pkt: pkt.hasflag('present', 'FHSS')),
+	ConditionalField(ByteField('FHSS_hop_pattern', 0), lambda pkt: pkt.hasflag('present', 'FHSS')),
+	ConditionalField(SignedByteField('dBm_AntSignal', 0), lambda pkt: pkt.hasflag('present', 'dBm_AntSignal')),
+	ConditionalField(SignedByteField('dBm_AntNoise', 0), lambda pkt: pkt.hasflag('present', 'dBm_AntNoise')),
+	ConditionalField(LEShortField('Lock_Quality', 0), lambda pkt: pkt.hasflag('present', 'Lock_Quality')),
+	ConditionalField(LEShortField('TX_Attenuation', 0), lambda pkt: pkt.hasflag('present', 'TX_Attenuation')),
+	ConditionalField(LEShortField('db_TX_Attenuation', 0), lambda pkt: pkt.hasflag('present', 'dB_TX_Attenuation')),
+	ConditionalField(SignedByteField('dBm_TX_Power', 0), lambda pkt: pkt.hasflag('present', 'dBm_TX_Power')),
+	ConditionalField(ByteField('Antenna', 0), lambda pkt: pkt.hasflag('present', 'Antenna')),
+	ConditionalField(ByteField('dB_AntSignal', 0), lambda pkt: pkt.hasflag('present', 'dB_AntSignal')),
+	ConditionalField(ByteField('dB_AntNoise', 0), lambda pkt: pkt.hasflag('present', 'dB_AntNoise')),
+	ConditionalField(LEShortField('RX_Flags', 0), lambda pkt: pkt.hasflag('present', 'b14')),
+	ConditionalField(LEShortField('mcs_known', 0), lambda pkt: pkt.hasflag('present', 'b19')),
+	ConditionalField(LEShortField('mcs_flags', 0), lambda pkt: pkt.hasflag('present', 'b19')),
+	ConditionalField(LEShortField('mcs', 0), lambda pkt: pkt.hasflag('present', 'b19')),
+	ConditionalField(LEIntField('a_mpdu_reference_num', 0), lambda pkt: pkt.hasflag('present', 'b20')),
+	ConditionalField(LEShortField('a_mpdu_flags', 0), lambda pkt: pkt.hasflag('present', 'b20')),
+	ConditionalField(ByteField('a_mpdu_crc', 0), lambda pkt: pkt.hasflag('present', 'b20')),
+	ConditionalField(ByteField('a_mpdu_reserved', 0), lambda pkt: pkt.hasflag('present', 'b20'))
 ]
-
-def scapy_layers_dot11_RadioTap_present_field_val(self, name):
-	"""Return an array of vales for the named present field or None if the field is not present"""
-	if self.hasflag('present', name):
-		byte_offset = 0
-		for flag_name, flag_byte_len, flag_unpack_specifier in self.present_fields_with_len:
-			if name == flag_name:
-				try:
-					str_val = self.notdecoded[byte_offset:byte_offset+flag_byte_len]
-					vals = unpack(flag_unpack_specifier, array.array('B', str_val))
-				except Exception, e:
-					Printer.error('name[{0}] flags{1}'.format(name, flag_unpack_specifier))
-					Printer.exception(e)
-					raise
-				return vals
-			elif self.hasflag('present', flag_name):
-				byte_offset += flag_byte_len
-	return None
-scapy.layers.dot11.RadioTap.present_field_val = scapy_layers_dot11_RadioTap_present_field_val
-del scapy_layers_dot11_RadioTap_present_field_val
-
-def scapy_layers_dot11_RadioTap_channel(self, default=-1):
-	"""Return the channel reported in the RadioTap header
-
-	This is the channel the interface is listening on, not the channel a packet was sent on"""
-	vals = self.present_field_val('Channel')
-	if vals:
-		# The actual map between channels and mhz is not linear but this formula works for 802.1 b/g/n
-		# TODO(ivanlei): read the flags(vals[1]) to determine how to interpret the mhz for the channel
-		delta = vals[0] - 2407
-		return min(14, max(1, delta / 5))
-	return default
-scapy.layers.dot11.RadioTap.channel = scapy_layers_dot11_RadioTap_channel
-del scapy_layers_dot11_RadioTap_channel
-
-def scapy_layers_dot11_RadioTap_antenna_signal_power(self):
-	"""Return the antenna_signal_power for the sender of the packet"""
-	vals = self.present_field_val('dBm_AntSignal')
-	if vals:
-		return vals[0]
-	return None
-scapy.layers.dot11.RadioTap.antenna_signal_power = scapy_layers_dot11_RadioTap_antenna_signal_power
-del scapy_layers_dot11_RadioTap_antenna_signal_power
 
 
 class Dot11EltRSN(Packet):
@@ -346,7 +350,7 @@ class AccessPoint:
 			self.sta_bssids.add(packet[Dot11].sta_bssid())
 
 		if self.bssid == packet[Dot11].addr2:
-			power = packet[RadioTap].antenna_signal_power()
+			power = packet[RadioTap].dBm_AntSignal
 			if power:
 				self.power = power
 
@@ -470,7 +474,7 @@ class Dot11Scanner:
 		try:
 			# Verify the RadioTap header
 			if packet.haslayer(RadioTap):
-				assert (self.scanner_options.input_file or (self.scanner_options.channel == packet[RadioTap].channel()))
+				assert (self.scanner_options.input_file or (self.scanner_options.channel == packet[RadioTap].Channel)), 'got[%d] expect[%d]' % (packet[RadioTap].Channel, self.scanner_options.channel)
 
 			# Track AP and STA
 			if packet.haslayer(Dot11):
