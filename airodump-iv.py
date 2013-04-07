@@ -8,6 +8,7 @@ Current functionality mimics airodump-ng for the most part.
 """
 import curses
 import errno
+import re
 import scapy
 import sys
 import traceback
@@ -40,10 +41,22 @@ from scapy.layers.dot11 import Dot11ProbeResp
 from scapy.layers.dot11 import RadioTap
 from scapy.packet import Packet
 from struct import unpack
-from subprocess import call
+from subprocess import check_call
+from tempfile import SpooledTemporaryFile
 
 
 BROADCAST_BSSID = 'ff:ff:ff:ff:ff:ff'
+
+def shell_command(cmd):
+	"""Shell out a subprocess and return what it writes to stdout as a string"""
+	in_mem_file = SpooledTemporaryFile(max_size=2048, mode="r+")
+	check_call(cmd, shell=True, stdout=in_mem_file)
+	in_mem_file.seek(0)
+	stdout = in_mem_file.read()
+	in_mem_file.close()
+	del in_mem_file
+	return stdout
+
 
 class Printer:
 	"""A class for printing messages that respects verbosity levels"""
@@ -291,7 +304,7 @@ class Dot11ScannerOptions:
 		self.packet_count = 0
 		self.channel = -1
 		self.channel_hop = True
-		self.max_channel = 11
+		self.max_channel = -1
 		self.input_file = None
 		self.enable_curses = True
 
@@ -303,12 +316,12 @@ class Dot11ScannerOptions:
 						  help='Interface to bind to')
 		parser.add_option('-c', '--channel', dest='channel', default=-1, type='int',
 						  help='Channel to bind to')
-		parser.add_option('--max-channel', dest='max_channel', default=11, type='int',
+		parser.add_option('--max-channel', dest='max_channel', default=-1, type='int',
 						  help='Maximum channel number')
-		parser.add_option('--packet_count', dest='packet_count', default=0, type='int',
+		parser.add_option('--packet_count', dest='packet_count', default=-1, type='int',
 						  help='Number of packets to capture')
-		parser.add_option('--input-file', dest='input_file', default=None,
-						  help='pcap file to read from')
+		parser.add_option('-r', '--input-file', dest='input_file', default=None,
+						  help='Read packets from pcap file')
 		parser.add_option('-v', '--verbose', dest='verbose', default=False, action='store_true',
 						  help='Print verbose information')
 		parser.add_option('--verbose-level', dest='verbose_level', default=0, type='int',
@@ -321,6 +334,16 @@ class Dot11ScannerOptions:
 		scanner_options.iface = options.iface
 		scanner_options.channel = options.channel
 		scanner_options.channel_hop = (-1 == options.channel and not options.input_file)
+		scanner_options.max_channel = options.max_channel
+		if -1 == scanner_options.max_channel:
+			try:
+				iwlist_output = shell_command('/sbin/iwlist {0} channel'.format(scanner_options.iface))
+				match = re.match('\s?{0}\s+(\d+)'.format(scanner_options.iface), iwlist_output)
+				scanner_options.max_channel = int(match.group(1))
+			except Exception, e:
+				Printer.exception(e)
+				scanner_options.max_channel = 3
+
 		scanner_options.packet_count = options.packet_count
 		scanner_options.input_file = options.input_file
 		scanner_options.enable_curses = not options.no_curses
@@ -569,7 +592,7 @@ class Dot11Scanner:
 
 	def set_channel(self, channel):
 		Printer.verbose('CHAN: set_channel %d' % channel, verbose_level=3)
-		call('/sbin/iwconfig %s channel %d' % (self.scanner_options.iface, channel), shell=True)
+		shell_command('/sbin/iwconfig {0} channel {1}'.format(self.scanner_options.iface, channel))
 		if self.display:
 			self.display.update_header()
 
