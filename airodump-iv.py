@@ -161,7 +161,7 @@ del scapy_layers_dot11_RadioTap_pre_dissect
 
 
 class Dot11EltRSN(Packet):
-	"""Defined by IEEE Std 802.11i and contains 'security' details"""
+	"""The enc, cipher, and auth members contain the decoded 'security' details"""
 
 	name = '802.11 RSN Information Element'
 
@@ -192,28 +192,27 @@ class Dot11EltRSN(Packet):
 		BitField('rsn_cap_reserved_2', 0, 6),
 	]
 
-	def get_enc_cipher_auth(self):
-		"""Return a triple of friendly names for encryption type, cipher suite, and authentication"""
+	def post_dissection(self, pkt):
+		"""Parse cipher suites to determine encryption, cipher, and authentication methods"""
 
-		enc = 'WPA2' # Everything is assumed to be WPA
-		cipher = ''
-		auth = ''
+		self.enc = 'WPA2' # Everything is assumed to be WPA
+		self.cipher = ''
+		self.auth = ''
 
 		for pairwise_cipher in self.getfieldval('pairwise_cipher_suite'):
-			cipher = self.cipher_suites.get(pairwise_cipher, '')
-			if 'GROUP' == cipher: # Must look at the group_cipher_suite
+			self.cipher = self.cipher_suites.get(pairwise_cipher, '')
+			if 'GROUP' == self.cipher: # Must look at the group_cipher_suite
 				for group_cipher in self.getfieldval('group_cipher_suite'):
-					cipher = self.cipher_suites.get(group_cipher, '')
+					self.cipher = self.cipher_suites.get(group_cipher, '')
 					break
-			elif 'WEP' == cipher:
+			elif 'WEP' == self.cipher:
 				enc = 'WEP'
 			break
 
 		for auth_cipher in self.getfieldval('auth_cipher_suite'):
-			auth = self.auth_suites.get(auth_cipher, '')
+			self.auth = self.auth_suites.get(auth_cipher, '')
 			break
 
-		return enc, cipher, auth
 
 def scapy_layers_dot11_Dot11_elts(self):
 	"""An iterator of Dot11Elt"""
@@ -225,7 +224,7 @@ scapy.layers.dot11.Dot11.elts = scapy_layers_dot11_Dot11_elts
 del scapy_layers_dot11_Dot11_elts
 
 def scapy_layers_dot11_Dot11_find_elt_by_id(self, id):
-	"""Iterator over elt and return the first with a specific ID"""
+	"""Iterate over elt and return the first with a specific ID"""
 	for elt in self.elts():
 		if elt.ID == id:
 			return elt
@@ -258,15 +257,16 @@ def scapy_layers_dot11_Dot11_ap_bssid(self):
 scapy.layers.dot11.Dot11.ap_bssid = scapy_layers_dot11_Dot11_ap_bssid
 del scapy_layers_dot11_Dot11_ap_bssid
 
-def scapy_layers_dot11_Dot11_channel(self, default=-1):
-	"""Return the payload of the channel Dot11Elt if it exists or default otherwise"""
+def scapy_layers_dot11_Dot11_channel(self):
+	"""Return the payload of the channel Dot11Elt if it exists"""
 	elt = self.find_elt_by_id(3)
 	if elt:
 		try:
 			return int(ord(elt.info))
-		except:
+		except Exception, e:
 			Printer.error('Bad Dot11Elt channel got[%s]' % elt.info)
-	return default
+			Printer.exception(e)
+	return None
 scapy.layers.dot11.Dot11.channel = scapy_layers_dot11_Dot11_channel
 del scapy_layers_dot11_Dot11_channel
 
@@ -276,8 +276,9 @@ def scapy_layers_dot11_Dot11_rsn(self):
 	if elt:
 		try:
 			return Dot11EltRSN(elt.info)
-		except:
+		except Exception, e:
 			Printer.error('Bad Dot11EltRSN got[%s]' % elt.info)
+			Printer.exception(e)
 	return None
 scapy.layers.dot11.Dot11.rsn = scapy_layers_dot11_Dot11_rsn
 del scapy_layers_dot11_Dot11_rsn
@@ -330,12 +331,14 @@ class Dot11ScannerOptions:
 		return scanner_options
 
 class AccessPoint:
-	def __init__(self, packet, channel=-1):
+	"""Representation of an access point"""
+
+	def __init__(self, packet):
 		self.bssid = packet[Dot11].ap_bssid()
 		self.beacon_count = 0
 		self.sta_bssids = set()
 		self.essid = ''
-		self.channel = packet[Dot11].channel(default=channel)
+		self.channel = None
 		self.enc = 'OPN'
 		self.cipher = ''
 		self.auth = ''
@@ -344,12 +347,12 @@ class AccessPoint:
 
 		self.display_row = -1
 
-	def update(self, packet, channel=-1):
+	def update(self, packet):
 		essid = packet[Dot11].essid()
 		if essid:
 			self.essid = essid
 
-		self.channel = packet[Dot11].channel(default=channel)
+		self.channel = packet[Dot11].channel() or packet[RadioTap].Channel
 		if packet.haslayer(Dot11Beacon):
 			self.beacon_count += 1
 			self.hidden_essid = (not essid)
@@ -357,7 +360,9 @@ class AccessPoint:
 			if packet.hasflag('cap', 'privacy'):
 				elt_rsn = packet[Dot11].rsn()
 				if elt_rsn:
-					self.enc, self.cipher, self.auth = elt_rsn.get_enc_cipher_auth()
+					self.enc = elt_rsn.enc
+					self.cipher = elt_rsn.cipher
+					self.auth = elt_rsn.auth
 				else:
 					self.enc = 'WEP'
 					self.cipher = 'WEP'
@@ -453,7 +458,7 @@ class Dot11Scanner:
 		else:
 			self.display = None
 
-	def _update_access_points(self, packet, channel=-1):
+	def _update_access_points(self, packet):
 		show = False
 
 		# Look for an ap or create one
@@ -464,9 +469,9 @@ class Dot11Scanner:
 		if bssid in self.access_points:
 			ap = self.access_points[bssid]
 		else:
-			ap = self.access_points[bssid] = AccessPoint(packet, channel=channel)
+			ap = self.access_points[bssid] = AccessPoint(packet)
 			show = True
-		ap.update(packet, channel=channel)
+		ap.update(packet)
 
 		self.bssid_to_essid[ap.bssid] = ap.essid
 
@@ -501,10 +506,10 @@ class Dot11Scanner:
 			if packet.haslayer(Dot11):
 				ap = None
 				if packet.haslayer(Dot11Beacon):
-					ap = self._update_access_points(packet, channel=self.scanner_options.channel)
+					ap = self._update_access_points(packet)
 
 				elif any(packet.haslayer(layer) for layer in [Dot11ProbeReq, Dot11ProbeResp, Dot11Auth]):
-					ap = self._update_access_points(packet, channel=self.scanner_options.channel)
+					ap = self._update_access_points(packet)
 					self._update_stations(packet)
 
 				if self.display and ap:
