@@ -36,10 +36,12 @@ from scapy.fields import Field
 from scapy.fields import FieldLenField
 from scapy.fields import FieldListField
 from scapy.fields import FlagsField
+from scapy.fields import IntField
 from scapy.fields import LEFieldLenField
 from scapy.fields import LEIntField
 from scapy.fields import LELongField
 from scapy.fields import LEShortField
+from scapy.fields import ShortField
 from scapy.fields import StrField
 from scapy.fields import StrFixedLenField
 from scapy.layers.dot11 import Dot11
@@ -69,55 +71,34 @@ def shell_command(cmd):
 	del in_mem_file
 	return stdout
 
-class iw_struct:
-	format_string = ''
-	def pack(self, buff, offset=0):
-		pass
-	def unpack(self, buff):
-		pass
-	def calcsize(self):
-		return calcsize(self.format_string)
+class iw_param(Packet):
+	name = 'iw_param struct'
 
-class iw_param(iw_struct):
-	format_string = 'iBBH'
+	fields_desc = [
+		LEIntField('value', 0),
+		ByteField('fixed', 0),
+		ByteField('disabled', 0),
+		LEShortField('flags', 0)
+	]
 
-	def __init__(self, value=0, fixed=0, disabled=0, flags=0):
-		self.value = value
-		self.fixed = fixed
-		self.disabled = disabled
-		self.flags = flags
 
-	def pack(self, buff, offset=0):
-		return pack_into(self.format_string, buff, self.value, self.fixed, self.disabled, self.flags)
+class iw_point(Packet):
+	name = 'iw_point struct'
 
-	def unpack(self, buff, offset=0):
-		self.value, self.fixed, self.disabled, self.flags = unpack_from(self.format_string, buff, offset)
+	fields_desc = [
+		LEIntField('pointer', 0),
+		LEShortField('length', 0),
+		LEShortField('flags', 0)
+	]
 
-class iw_point(iw_struct):
-	format_string = 'PHH'
 
-	def __init__(self, pointer=0, length=0, flags=0):
-		self.pointer = pointer
-		self.length = length
-		self.flags = flags
+class iw_req(Packet):
+	name = 'iw_req struct'
 
-	def pack(self, buff, offset=0):
-		return pack_into(self.format_string, buff, offset, self.pointer, self.length, self.flags)
+	fields_desc = [
+		StrFixedLenField('iface', 0, length=16)
+	]
 
-	def unpack(self, buff, offset=0):
-		self.pointer, self.length, self.flags = unpack_from(self.format_string, buff, offset)
-
-class iw_req(iw_struct):
-	format_string = '16s'
-
-	def __init__(self, iface):
-		self.iface = iface
-
-	def pack(self, buff, offset=0):
-		return pack_into(self.format_string, buff, offset, self.iface)
-
-	def unpack(self, buff, offset=0):
-		self.iface = unpack_from(self.format_string, buff, offset)
 
 class WirelessExtension:
 	IFNAMSIZ = 16
@@ -128,16 +109,11 @@ class WirelessExtension:
 		buff_out = array.array('B', '\0' * 2048)
 		pointer, length = buff_out.buffer_info()
 
-		req_header = iw_req(iface)
-		req_payload = iw_point(pointer, length)
-
-		total_size = req_header.calcsize() + req_payload.calcsize()
-		buff_in = array.array('B', '\0' * total_size)
-		req_header.pack(buff_in)
-		req_payload.pack(buff_in, req_header.calcsize())
-
+		req = iw_req(iface)/iw_point(pointer=pointer, length=length)
 		sockfd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		ioctl(sockfd.fileno(), 0x8B0B, buff_in)
+		ioctl(sockfd.fileno(), 0x8B0B, str(req))
+		sockfd.close()
+		del sockfd
 
 		print repr(buff_out)
 
