@@ -43,8 +43,7 @@ from struct import unpack
 from subprocess import call
 
 
-# default BSSID when real BSSID is unknown
-DEFAULT_BSSID = 'ff:ff:ff:ff:ff:ff'
+BROADCAST_BSSID = 'ff:ff:ff:ff:ff:ff'
 
 class Printer:
 	"""A class for printing messages that respects verbosity levels"""
@@ -102,42 +101,63 @@ class ChannelFromMhzField(LEShortField):
 	def m2i(self, pkt, x):
 		return min(14, max(1, (x - 2407) / 5))
 
-# TODO(ivanlei): This fields_desc does not cover all bits or chained present flags
-# decode will fail in these cases
+
+class PresentFlagField(ConditionalField):
+	def __init__(self, field, flag_name):
+		ConditionalField.__init__(self, field, lambda pkt: pkt.hasflag('present', flag_name))
+
+
+# TODO(ivanlei): This fields_desc does not cover chained present flags decode will fail in this cases
+scapy.layers.dot11.RadioTap.name = '802.11 RadioTap'
 scapy.layers.dot11.RadioTap.fields_desc = [
 	ByteField('version', 0),
 	ByteField('pad', 0),
-	FieldLenField('len', None, 'notdecoded', '<H', adjust=lambda pkt,x:x+8),
+	LEShortField('RadioTap_len', 0),
 	FlagsField('present', None, -32, ['TSFT','Flags','Rate','Channel','FHSS','dBm_AntSignal',
 									  'dBm_AntNoise','Lock_Quality','TX_Attenuation','dB_TX_Attenuation',
 									  'dBm_TX_Power', 'Antenna', 'dB_AntSignal', 'dB_AntNoise',
 									  'b14', 'b15','b16','b17','b18','b19','b20','b21','b22','b23',
 									  'b24','b25','b26','b27','b28','b29','b30','Ext']),
-	ConditionalField(LELongField('TSFT', 0), lambda pkt: pkt.hasflag('present', 'TSFT')),
-	ConditionalField(ByteField('Flags', 0), lambda pkt: pkt.hasflag('present', 'Flags')),
-	ConditionalField(ByteField('Rate', 0), lambda pkt: pkt.hasflag('present', 'Rate')),
-	ConditionalField(ChannelFromMhzField('Channel', 0), lambda pkt: pkt.hasflag('present', 'Channel')),
-	ConditionalField(LEShortField('Channel_flags', 0), lambda pkt: pkt.hasflag('present', 'Channel')),
-	ConditionalField(ByteField('FHSS_hop_set', 0), lambda pkt: pkt.hasflag('present', 'FHSS')),
-	ConditionalField(ByteField('FHSS_hop_pattern', 0), lambda pkt: pkt.hasflag('present', 'FHSS')),
-	ConditionalField(SignedByteField('dBm_AntSignal', 0), lambda pkt: pkt.hasflag('present', 'dBm_AntSignal')),
-	ConditionalField(SignedByteField('dBm_AntNoise', 0), lambda pkt: pkt.hasflag('present', 'dBm_AntNoise')),
-	ConditionalField(LEShortField('Lock_Quality', 0), lambda pkt: pkt.hasflag('present', 'Lock_Quality')),
-	ConditionalField(LEShortField('TX_Attenuation', 0), lambda pkt: pkt.hasflag('present', 'TX_Attenuation')),
-	ConditionalField(LEShortField('db_TX_Attenuation', 0), lambda pkt: pkt.hasflag('present', 'dB_TX_Attenuation')),
-	ConditionalField(SignedByteField('dBm_TX_Power', 0), lambda pkt: pkt.hasflag('present', 'dBm_TX_Power')),
-	ConditionalField(ByteField('Antenna', 0), lambda pkt: pkt.hasflag('present', 'Antenna')),
-	ConditionalField(ByteField('dB_AntSignal', 0), lambda pkt: pkt.hasflag('present', 'dB_AntSignal')),
-	ConditionalField(ByteField('dB_AntNoise', 0), lambda pkt: pkt.hasflag('present', 'dB_AntNoise')),
-	ConditionalField(LEShortField('RX_Flags', 0), lambda pkt: pkt.hasflag('present', 'b14')),
-	ConditionalField(LEShortField('mcs_known', 0), lambda pkt: pkt.hasflag('present', 'b19')),
-	ConditionalField(LEShortField('mcs_flags', 0), lambda pkt: pkt.hasflag('present', 'b19')),
-	ConditionalField(LEShortField('mcs', 0), lambda pkt: pkt.hasflag('present', 'b19')),
-	ConditionalField(LEIntField('a_mpdu_reference_num', 0), lambda pkt: pkt.hasflag('present', 'b20')),
-	ConditionalField(LEShortField('a_mpdu_flags', 0), lambda pkt: pkt.hasflag('present', 'b20')),
-	ConditionalField(ByteField('a_mpdu_crc', 0), lambda pkt: pkt.hasflag('present', 'b20')),
-	ConditionalField(ByteField('a_mpdu_reserved', 0), lambda pkt: pkt.hasflag('present', 'b20'))
+	PresentFlagField(LELongField('TSFT', 0), 'TSFT'),
+	PresentFlagField(ByteField('Flags', 0), 'Flags'),
+	PresentFlagField(ByteField('Rate', 0), 'Rate'),
+	PresentFlagField(ChannelFromMhzField('Channel', 0), 'Channel'),
+	PresentFlagField(LEShortField('Channel_flags', 0), 'Channel'),
+	PresentFlagField(ByteField('FHSS_hop_set', 0), 'FHSS'),
+	PresentFlagField(ByteField('FHSS_hop_pattern', 0), 'FHSS'),
+	PresentFlagField(SignedByteField('dBm_AntSignal', 0), 'dBm_AntSignal'),
+	PresentFlagField(SignedByteField('dBm_AntNoise', 0), 'dBm_AntNoise'),
+	PresentFlagField(LEShortField('Lock_Quality', 0), 'Lock_Quality'),
+	PresentFlagField(LEShortField('TX_Attenuation', 0), 'TX_Attenuation'),
+	PresentFlagField(LEShortField('db_TX_Attenuation', 0), 'dB_TX_Attenuation'),
+	PresentFlagField(SignedByteField('dBm_TX_Power', 0), 'dBm_TX_Power'),
+	PresentFlagField(ByteField('Antenna', 0), 'Antenna'),
+	PresentFlagField(ByteField('dB_AntSignal', 0), 'dB_AntSignal'),
+	PresentFlagField(ByteField('dB_AntNoise', 0), 'dB_AntNoise'),
+	PresentFlagField(LEShortField('RX_Flags', 0), 'b14')
 ]
+
+def scapy_layers_dot11_RadioTap_extract_padding(self, s):
+	"""Ignore any unparsed conditionally present fields
+
+	If all fields have been parsed, the payload length should have decreased RadioTap_len bytes
+	If it has not, there are unparsed fields which should be treated as padding
+	"""
+	post_disset_len = len(s)
+	padding = len(s) - (self.pre_dissect_len - self.RadioTap_len)
+	if padding:
+		return s[padding:], s[:padding]
+	else:
+		return s, None
+scapy.layers.dot11.RadioTap.extract_padding = scapy_layers_dot11_RadioTap_extract_padding
+del scapy_layers_dot11_RadioTap_extract_padding
+
+def scapy_layers_dot11_RadioTap_pre_dissect(self, s):
+	"""Cache to total payload length prior to dissection for use in finding padding latter"""
+	self.pre_dissect_len = len(s)
+	return s
+scapy.layers.dot11.RadioTap.pre_dissect = scapy_layers_dot11_RadioTap_pre_dissect
+del scapy_layers_dot11_RadioTap_pre_dissect
 
 
 class Dot11EltRSN(Packet):
@@ -154,21 +174,22 @@ class Dot11EltRSN(Packet):
 	auth_suites = { '\x00\x0f\xac\x01': 'MGT',
 					'\x00\x0f\xac\x02': 'PSK' }
 
-	fields_desc = [ LEShortField('version', 1),
-					StrFixedLenField('group_cipher_suite', '', length=4),
-					LEFieldLenField('pairwise_cipher_suite_count', 1, count_of='pairwise_cipher_suite'),
-					FieldListField('pairwise_cipher_suite', None, StrFixedLenField('','', length=4), count_from=lambda pkt: pkt.pairwise_cipher_suite_count),
-					LEFieldLenField('auth_cipher_suite_count', 1, count_of='auth_cipher_suite'),
-					FieldListField('auth_cipher_suite', None, StrFixedLenField('','',length=4), count_from=lambda pkt: pkt.auth_cipher_suite_count),
-					BitField('rsn_cap_pre_auth', 0, 1),
-					BitField('rsn_cap_no_pairwise', 0, 1),
-					BitField('rsn_cap_ptksa_replay_counter', 0, 2),
-					BitField('rsn_cap_gtksa_replay_counter', 0, 2),
-					BitField('rsn_cap_mgmt_frame_protect_required', 0, 1),
-					BitField('rsn_cap_mgmt_frame_protect_capable', 0, 1),
-					BitField('rsn_cap_reserved_1', 0, 1),
-					BitField('rsn_cap_peer_key_enabled', 0, 1),
-					BitField('rsn_cap_reserved_2', 0, 6),
+	fields_desc = [
+		LEShortField('version', 1),
+		StrFixedLenField('group_cipher_suite', '', length=4),
+		LEFieldLenField('pairwise_cipher_suite_count', 1, count_of='pairwise_cipher_suite'),
+		FieldListField('pairwise_cipher_suite', None, StrFixedLenField('','', length=4), count_from=lambda pkt: pkt.pairwise_cipher_suite_count),
+		LEFieldLenField('auth_cipher_suite_count', 1, count_of='auth_cipher_suite'),
+		FieldListField('auth_cipher_suite', None, StrFixedLenField('','',length=4), count_from=lambda pkt: pkt.auth_cipher_suite_count),
+		BitField('rsn_cap_pre_auth', 0, 1),
+		BitField('rsn_cap_no_pairwise', 0, 1),
+		BitField('rsn_cap_ptksa_replay_counter', 0, 2),
+		BitField('rsn_cap_gtksa_replay_counter', 0, 2),
+		BitField('rsn_cap_mgmt_frame_protect_required', 0, 1),
+		BitField('rsn_cap_mgmt_frame_protect_capable', 0, 1),
+		BitField('rsn_cap_reserved_1', 0, 1),
+		BitField('rsn_cap_peer_key_enabled', 0, 1),
+		BitField('rsn_cap_reserved_2', 0, 6),
 	]
 
 	def get_enc_cipher_auth(self):
@@ -197,7 +218,7 @@ class Dot11EltRSN(Packet):
 def scapy_layers_dot11_Dot11_elts(self):
 	"""An iterator of Dot11Elt"""
 	dot11elt = self.getlayer(Dot11Elt)
-	while dot11elt:
+	while dot11elt and dot11elt.haslayer(Dot11Elt):
 		yield dot11elt
 		dot11elt = dot11elt.payload
 scapy.layers.dot11.Dot11.elts = scapy_layers_dot11_Dot11_elts
@@ -437,7 +458,7 @@ class Dot11Scanner:
 
 		# Look for an ap or create one
 		bssid = packet[Dot11].ap_bssid()
-		if bssid == DEFAULT_BSSID:
+		if bssid == BROADCAST_BSSID:
 			return None
 
 		if bssid in self.access_points:
