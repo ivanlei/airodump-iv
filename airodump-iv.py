@@ -5,15 +5,25 @@ The goal of this script is to aggregate the functionality of tools like
 airmon-ng and airodump-ng into a single easily extendable python tool.
 
 Current functionality mimics airodump-ng for the most part.
+
+Currently the code is shelling out to Wireless Tools (WT) to control things
+Should look at using Wireless Extensions (WE) ioctls for speed
+  WT -- http://www.hpl.hp.com/personal/Jean_Tourrilhes/Linux/Tools.html
+  WE -- /usr/include/linux/wireless.h
+  Netdevice manual -- http://linux.die.net/man/7/netdevice
+  Good python WE example -- http://pythonwifi.wikispot.org/
+
 """
 import curses
 import errno
 import re
 import scapy
+import socket
 import sys
 import traceback
 
 from datetime import datetime
+from fcntl import ioctl
 from optparse import OptionParser
 from random import randint
 from scapy.all import sniff
@@ -40,6 +50,8 @@ from scapy.layers.dot11 import Dot11ProbeReq
 from scapy.layers.dot11 import Dot11ProbeResp
 from scapy.layers.dot11 import RadioTap
 from scapy.packet import Packet
+from struct import calcsize
+from struct import pack_into
 from struct import unpack
 from subprocess import check_call
 from tempfile import SpooledTemporaryFile
@@ -57,6 +69,77 @@ def shell_command(cmd):
 	del in_mem_file
 	return stdout
 
+class iw_struct:
+	format_string = ''
+	def pack(self, buff, offset=0):
+		pass
+	def unpack(self, buff):
+		pass
+	def calcsize(self):
+		return calcsize(self.format_string)
+
+class iw_param(iw_struct):
+	format_string = 'iBBH'
+
+	def __init__(self, value=0, fixed=0, disabled=0, flags=0):
+		self.value = value
+		self.fixed = fixed
+		self.disabled = disabled
+		self.flags = flags
+
+	def pack(self, buff, offset=0):
+		return pack_into(self.format_string, buff, self.value, self.fixed, self.disabled, self.flags)
+
+	def unpack(self, buff, offset=0):
+		self.value, self.fixed, self.disabled, self.flags = unpack_from(self.format_string, buff, offset)
+
+class iw_point(iw_struct):
+	format_string = 'PHH'
+
+	def __init__(self, pointer=0, length=0, flags=0):
+		self.pointer = pointer
+		self.length = length
+		self.flags = flags
+
+	def pack(self, buff, offset=0):
+		return pack_into(self.format_string, buff, offset, self.pointer, self.length, self.flags)
+
+	def unpack(self, buff, offset=0):
+		self.pointer, self.length, self.flags = unpack_from(self.format_string, buff, offset)
+
+class iw_req(iw_struct):
+	format_string = '16s'
+
+	def __init__(self, iface):
+		self.iface = iface
+
+	def pack(self, buff, offset=0):
+		return pack_into(self.format_string, buff, offset, self.iface)
+
+	def unpack(self, buff, offset=0):
+		self.iface = unpack_from(self.format_string, buff, offset)
+
+class WirelessExtension:
+	IFNAMSIZ = 16
+
+	@staticmethod
+	def SIOCGIWRANGE(iface):
+		# Allocate an array for the response
+		buff_out = array.array('B', '\0' * 2048)
+		pointer, length = buff_out.buffer_info()
+
+		req_header = iw_req(iface)
+		req_payload = iw_point(pointer, length)
+
+		total_size = req_header.calcsize() + req_payload.calcsize()
+		buff_in = array.array('B', '\0' * total_size)
+		req_header.pack(buff_in)
+		req_payload.pack(buff_in, req_header.calcsize())
+
+		sockfd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		ioctl(sockfd.fileno(), 0x8B0B, buff_in)
+
+		print repr(buff_out)
 
 class Printer:
 	"""A class for printing messages that respects verbosity levels"""
@@ -106,9 +189,11 @@ def scapy_fields_FieldListField_i2repr(self, pkt, x):
 FieldListField.i2repr = scapy_fields_FieldListField_i2repr
 del scapy_fields_FieldListField_i2repr
 
+
 class SignedByteField(Field):
 	def __init__(self, name, default):
 		Field.__init__(self, name, default, '<b')
+
 
 class ChannelFromMhzField(LEShortField):
 	def m2i(self, pkt, x):
@@ -277,7 +362,7 @@ def scapy_layers_dot11_Dot11_channel(self):
 		try:
 			return int(ord(elt.info))
 		except Exception, e:
-			Printer.error('Bad Dot11Elt channel got[%s]' % elt.info)
+			Printer.error('Bad Dot11Elt channel got[{0:s}]'.format(elt.info))
 			Printer.exception(e)
 	return None
 scapy.layers.dot11.Dot11.channel = scapy_layers_dot11_Dot11_channel
@@ -290,7 +375,7 @@ def scapy_layers_dot11_Dot11_rsn(self):
 		try:
 			return Dot11EltRSN(elt.info)
 		except Exception, e:
-			Printer.error('Bad Dot11EltRSN got[%s]' % elt.info)
+			Printer.error('Bad Dot11EltRSN got[{0:s}]'.format(elt.info))
 			Printer.exception(e)
 	return None
 scapy.layers.dot11.Dot11.rsn = scapy_layers_dot11_Dot11_rsn
@@ -337,9 +422,11 @@ class Dot11ScannerOptions:
 		scanner_options.max_channel = options.max_channel
 		if -1 == scanner_options.max_channel:
 			try:
-				iwlist_output = shell_command('/sbin/iwlist {0} channel'.format(scanner_options.iface))
+				# TODO(ivanlei): shelling out is slow - investigate using an ioctl
+				iwlist_output = shell_command('iwlist {0} channel'.format(scanner_options.iface))
 				match = re.match('\s?{0}\s+(\d+)'.format(scanner_options.iface), iwlist_output)
 				scanner_options.max_channel = int(match.group(1))
+				Printer.verbose('CHAN: max_channel[{0}]'.format(channel), verbose_level=3)
 			except Exception, e:
 				Printer.exception(e)
 				scanner_options.max_channel = 3
@@ -519,7 +606,7 @@ class Dot11Scanner:
 		try:
 			# Verify the RadioTap header
 			if packet.haslayer(RadioTap):
-				assert (self.scanner_options.input_file or (self.scanner_options.channel == packet[RadioTap].Channel)), 'got[%d] expect[%d]' % (packet[RadioTap].Channel, self.scanner_options.channel)
+				assert (self.scanner_options.input_file or (self.scanner_options.channel == packet[RadioTap].Channel)), 'got[{0}] expect[{1}]'.format(packet[RadioTap].Channel, self.scanner_options.channel)
 
 			# Track AP and STA
 			if packet.haslayer(Dot11):
@@ -591,8 +678,9 @@ class Dot11Scanner:
 					raise
 
 	def set_channel(self, channel):
-		Printer.verbose('CHAN: set_channel %d' % channel, verbose_level=3)
-		shell_command('/sbin/iwconfig {0} channel {1}'.format(self.scanner_options.iface, channel))
+		Printer.verbose('CHAN: set_channel {0}'.format(channel), verbose_level=3)
+		# TODO(ivanlei): shelling out is slow - investigate using an ioctl
+		shell_command('iwconfig {0} channel {1}'.format(self.scanner_options.iface, channel))
 		if self.display:
 			self.display.update_header()
 
@@ -684,3 +772,4 @@ def main():
 
 if __name__ == '__main__':
 	main()
+	#WirelessExtension.SIOCGIWRANGE('mon0')
