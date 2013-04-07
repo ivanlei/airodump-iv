@@ -442,21 +442,17 @@ class Station:
 
 	def show(self, bssid_to_essid=None):
 		return 'STA {0:<18} probes:{1} auth_req:{2}'.format(self.bssid,
-																repr(self.probes),
-																repr([self._show_bssid(auth_req, bssid_to_essid) for auth_req in self.auth_reqs]))
+															repr(self.probes),
+															repr([self._show_bssid(auth_req, bssid_to_essid) for auth_req in self.auth_reqs]))
 
 
 class Dot11Scanner:
 
-	def __init__(self, scanner_options, window=None):
+	def __init__(self, scanner_options):
 		self.scanner_options = scanner_options
 		self.access_points = dict()
 		self.stations = dict()
 		self.bssid_to_essid = dict()
-		if window:
-			self.display = Display(window, self)
-		else:
-			self.display = None
 
 	def _update_access_points(self, packet):
 		show = False
@@ -526,11 +522,16 @@ class Dot11Scanner:
 			return False
 
 	def seconds_elapsed(self):
-		td = datetime.now() - self.start_time
-		return (td.microseconds + (td.seconds + td.days * 24 * 3600) * 10**6) / 10**6
+		time_delta = datetime.now() - self.scan_start_time
+		return (time_delta.microseconds + (time_delta.seconds + time_delta.days * 24 * 3600) * 10**6) / 10**6
 
-	def scan(self):
-		self.start_time = datetime.now()
+	def scan(self, window = None):
+		self.scan_start_time = datetime.now()
+
+		if window:
+			self.display = Display(window, self)
+		else:
+			self.display = None
 
 		timeout = None
 
@@ -636,23 +637,22 @@ class Display:
 scanner_options = None
 
 def main():
-	scanner_options = Dot11ScannerOptions.create_scanner_options()
-
-	def run_scan(window=None):
-		try:
-			scanner = Dot11Scanner(scanner_options, window)
-			scanner.scan()
-		except Exception, e:
-			Printer.exception(e)
-		finally:
-			if scanner:
-				scanner.print_results()
 
 	try:
-		if scanner_options.enable_curses:
-			curses.wrapper(run_scan)
-		else:
-			run_scan()
+		scanner_options = Dot11ScannerOptions.create_scanner_options()
+		scanner = Dot11Scanner(scanner_options)
+
+		try:
+			if scanner_options.enable_curses:
+				curses.wrapper(scanner.scan)
+			else:
+				scanner.scan()
+		except Exception, e:
+			Printer.exception(e)
+
+		# Run with or without curses support, but finish in either case by printing a complete report
+		if scanner:
+			scanner.print_results()
 
 	except Exception, e:
 		sys.stderr.write(repr(e))
