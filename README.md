@@ -53,7 +53,6 @@ Useful options include:
 Interesting TODOs
 =================
 * Fix curses mode display to not have quite so many bugs
-* Display total # of data packets per AP
 * Display maximum support rate per AP
 * Improve station display
 * Test in clean install of BackTrack 5

@@ -122,6 +122,7 @@ class AccessPoint:
 	def __init__(self, packet):
 		self.bssid = packet[Dot11].ap_bssid()
 		self.beacon_count = 0
+		self.data_count = 0
 		self.sta_bssids = set()
 		self.essid = ''
 		self.channel = None
@@ -172,10 +173,11 @@ class AccessPoint:
 
 		hidden = 'YES' if self.hidden_essid else 'NO'
 
-		summary = '{0:<18} {1: >4d} {2: >7d} {3: >2d} {4:<4} {5:<6} {6:<4} {7: >3} {8:<32} '.format(
+		summary = '{0:<18} {1: >4d} {2: >7d} {3: >5d} {4: >2d} {5:<4} {6:<6} {7:<4} {8: >3} {9:<32} '.format(
 			self.bssid,
 			self.power,
 			self.beacon_count,
+			self.data_count,
 			self.channel,
 			self.enc,
 			self.cipher,
@@ -296,6 +298,11 @@ class Dot11Scanner:
 					ap = self._update_access_points(packet)
 					self._update_stations(packet)
 
+				elif packet[Dot11].hasflag('type', 'Data'):
+					ap_bssid = packet[Dot11].ap_bssid()
+					if ap_bssid in self.access_points:
+						self.access_points[ap_bssid].data_count += 1
+
 				if self.display and ap:
 					self.display.update(ap)
 
@@ -363,7 +370,7 @@ class Dot11Scanner:
 
 	def print_results(self):
 		Printer.write('\n\n')
-		Printer.write('{0:<18} {1:>4} {2:<7} {3:2} {4:<4} {5:<6} {6:<4} {7:3} {8:<32}'.format('BSSID', 'PWR', 'BEACONS', 'CH', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID'))
+		Printer.write('{0:<18} {1:>4} {2:<7} {3:5} {4:2} {5:<4} {6:<6} {7:<4} {8:3} {9:<32}'.format('BSSID', 'PWR', 'BEACONS', '#DATA', 'CH', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID'))
 		for access_point in self.access_points.values():
 			Printer.write(access_point.show(bssid_to_essid=self.bssid_to_essid))
 
@@ -389,7 +396,7 @@ class Display:
 				pass
 
 		self.window.clear()
-		header = '{0:<18} {1:>4} {2:<7} {3:2} {4:<4} {5:<6} {6:<4} {7:3} {8:<32}'.format('BSSID', 'PWR', 'BEACONS', 'CH', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID')
+		header = '{0:<18} {1:>4} {2:<7} {3:5} {4:2} {5:<4} {6:<6} {7:<4} {8:3} {9:<32}'.format('BSSID', 'PWR', 'BEACONS', '#DATA', 'CH', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID')
 		self.addstr(self.free_row, header)
 		self.free_row += 2
 		self.window.refresh()
