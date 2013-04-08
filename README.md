@@ -30,11 +30,14 @@ Installation & Running
 Currently under	active development, airodump-iv	has no installer.
 
 Steps to run include:
+* Grab the code:
+  * ``git clone git://github.com/ivanlei/airodump-iv.git``
+  * ``cd airodump-iv/airoiv``
 * Set wireless card into monitor mode:
   * ``sudo airmon-ng check kill``
   * ``sudo airmon-ng start wlan0``
 * Once the card	is in monitor mode:
-  * ``sudo python	airodump-iv.py``
+  * ``sudo python airodump-iv.py``
 
 Useful options include:
 * ``--iface=IFACE`` - Set the interface	to sniff on.  By default ``mon0``.
@@ -48,7 +51,6 @@ Useful options include:
 Interesting TODOs
 =================
 * Remove all calls to ``subprocess.check_call`` - with basic IOCTL support in place, this should be easy
-* Create proper package - split scapy extensions from ioctl support from sniffer
 * Fix curses mode display to not have quite so many bugs
 * Display total # of data packets per AP
 * Display maximum support rate per AP
