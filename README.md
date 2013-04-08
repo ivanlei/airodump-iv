@@ -37,9 +37,8 @@ Steps to run include:
 
 Useful options include:
 * ``--iface=IFACE`` - Set the interface	to sniff on.  By default ``mon0``.
-* ``--channel=CHANNEL`` - Monitor a single channel.  By default airodump-iv will channel-hop
-* ``--max-channel=MAX_CHANNEL``	- Set maximum channel during hopping.  By default uses maximum ch\
-annel reported by ``iwlist IFACE channel``.
+* ``--channel=CHANNEL`` - Monitor a single channel.  By default it will channel-hop.
+* ``--max-channel=MAX_CHANNEL``	- Set maximum channel during hopping.  By default uses the maximum channel reported by ``iwlist IFACE channel``.
 * ``--packet_count=PACKET_COUNT`` - Number of packets to capture.  By default unlimited.
 * ``--input-file=INPUT_FILE`` -	Read from PCAP file.
 * ``-v`` - Verbose mode.  Does not play	well with curses mode.
