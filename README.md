@@ -38,11 +38,13 @@ Steps to run include:
   * ``sudo airmon-ng start wlan0``
 * Once the card	is in monitor mode:
   * ``sudo python airodump-iv.py``
+* To exit
+  * ``CTRL-C`` (... repeatedly sometimes)
 
 Useful options include:
 * ``--iface=IFACE`` - Set the interface	to sniff on.  By default ``mon0``.
 * ``--channel=CHANNEL`` - Monitor a single channel.  By default it will channel-hop.
-* ``--max-channel=MAX_CHANNEL``	- Set maximum channel during hopping.  By default uses the maximum channel reported by ``iwlist IFACE channel``.
+* ``--max-channel=MAX_CHANNEL``	- Set maximum channel during hopping.  By default queries Wireless Extensions.
 * ``--packet_count=PACKET_COUNT`` - Number of packets to capture.  By default unlimited.
 * ``--input-file=INPUT_FILE`` -	Read from PCAP file.
 * ``-v`` - Verbose mode.  Does not play	well with curses mode.
@@ -50,7 +52,6 @@ Useful options include:
 
 Interesting TODOs
 =================
-* Remove all calls to ``subprocess.check_call`` - with basic IOCTL support in place, this should be easy
 * Fix curses mode display to not have quite so many bugs
 * Display total # of data packets per AP
 * Display maximum support rate per AP

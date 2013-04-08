@@ -26,21 +26,9 @@ from scapy.layers.dot11 import Dot11ProbeReq
 from scapy.layers.dot11 import Dot11ProbeResp
 from scapy.layers.dot11 import RadioTap
 from scapy.packet import Packet
-from subprocess import check_call
-from tempfile import SpooledTemporaryFile
 
 from scapy_ex import *
 from we import *
-
-def shell_command(cmd):
-	"""Shell out a subprocess and return what it writes to stdout as a string"""
-	in_mem_file = SpooledTemporaryFile(max_size=2048, mode="r+")
-	check_call(cmd, shell=True, stdout=in_mem_file)
-	in_mem_file.seek(0)
-	stdout = in_mem_file.read()
-	in_mem_file.close()
-	del in_mem_file
-	return stdout
 
 
 class Printer:
@@ -113,10 +101,7 @@ class Dot11ScannerOptions:
 		scanner_options.max_channel = options.max_channel
 		if -1 == scanner_options.max_channel:
 			try:
-				# TODO(ivanlei): shelling out is slow - investigate using an ioctl
-				iwlist_output = shell_command('iwlist {0} channel'.format(scanner_options.iface))
-				match = re.match('\s?{0}\s+(\d+)'.format(scanner_options.iface), iwlist_output)
-				scanner_options.max_channel = int(match.group(1))
+				scanner_options.max_channel = WirelessExtension.get_max_channel(scanner_options.iface)
 				Printer.verbose('CHAN: max_channel[{0}]'.format(scanner_options.max_channel), verbose_level=1)
 			except Exception, e:
 				Printer.exception(e)
@@ -295,11 +280,11 @@ class Dot11Scanner:
 
 	def _filter_function(self, packet):
 		try:
-			# Verify the RadioTap header
+			# Verify the RadioTap header, scanner, and WE all match
 			if packet.haslayer(RadioTap):
 				assert (self.scanner_options.input_file or (self.scanner_options.channel == packet[RadioTap].Channel)), 'got[{0}] expect[{1}]'.format(packet[RadioTap].Channel, self.scanner_options.channel)
-				channel_from_ioctl = WirelessExtension.ioctl_get_channel(self.scanner_options.iface)
-				assert (self.scanner_options.input_file or (self.scanner_options.channel == channel_from_ioctl)), 'got[{0}] expected[{1}]'.format(channel_from_ioctl, self.scanner_options.channel)
+				channel = WirelessExtension.get_channel(self.scanner_options.iface)
+				assert (self.scanner_options.input_file or (self.scanner_options.channel == channel)), 'got[{0}] expected[{1}]'.format(channel, self.scanner_options.channel)
 
 			# Track AP and STA
 			if packet.haslayer(Dot11):
@@ -372,7 +357,7 @@ class Dot11Scanner:
 
 	def set_channel(self, channel):
 		Printer.verbose('CHAN: set_channel {0}'.format(channel), verbose_level=3)
-		WirelessExtension.ioctl_set_channel(self.scanner_options.iface, channel)
+		WirelessExtension.set_channel(self.scanner_options.iface, channel)
 		if self.display:
 			self.display.update_header()
 

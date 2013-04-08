@@ -2,6 +2,8 @@
 Utilities for using Wireless Extensions (WE) ioctls
   WT -- http://www.hpl.hp.com/personal/Jean_Tourrilhes/Linux/Tools.html
   WE -- /usr/include/linux/wireless.h
+
+As set of scapy Packet classes model the structs from wireless.h
 """
 import scapy
 import socket
@@ -149,14 +151,19 @@ class iw_range(Packet):
 
 
 class WirelessExtension:
-	IFNAMSIZ = 16
+	"""A singleton for getting/caching/setting data with WE IOCTLS"""
 
-	freq_map = None
+	# Dict to map [channel -> iw_freq]
+	_freq_map = None
+
+	# Maximum available channel
+	_max_channel = -1
 
 	@staticmethod
-	def ioctl_get_freq_map(iface):
-		if WirelessExtension.freq_map:
-			return WirelessExtension.freq_map
+	def _ioctl_get_freq_map(iface):
+		"""Populate an iw_range with data and introspect the frequency data"""
+		if WirelessExtension._freq_map:
+			return WirelessExtension._freq_map
 
 		# Allocate an array for the response
 		buff_out = array.array('B', '\0' * 2048)
@@ -170,14 +177,25 @@ class WirelessExtension:
 
 		resp = iw_range(buff_out.tostring())
 
-		WirelessExtension.freq_map = {}
+		WirelessExtension._freq_map = {}
 		for freq in resp.getfieldval('freq'):
 			if freq.m:
-				WirelessExtension.freq_map[str(freq.i)] = freq
-		return WirelessExtension.freq_map
+				WirelessExtension._freq_map[str(freq.i)] = freq
+				if freq.i > WirelessExtension._max_channel:
+					WirelessExtension._max_channel = freq.i
+
+		return WirelessExtension._freq_map
 
 	@staticmethod
-	def ioctl_get_channel(iface):
+	def get_max_channel(iface):
+		"""Get the maximum channel supported by the interface"""
+		WirelessExtension._ioctl_get_freq_map(iface)
+		return WirelessExtension._max_channel
+
+
+	@staticmethod
+	def get_channel(iface):
+		"""Get the current channel for the interface"""
 		req = iw_freq_req_resp(iface)
 		buff_in_out = array.array('B', str(req))
 		sockfd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -189,9 +207,10 @@ class WirelessExtension:
 		return min(14, max(1, (resp[iw_freq].m - 2407) / 5))
 
 	@staticmethod
-	def ioctl_set_channel(iface, channel):
-		WirelessExtension.ioctl_get_freq_map(iface)
-		freq = WirelessExtension.freq_map[str(channel)]
+	def set_channel(iface, channel):
+		"""Set the current channel for the interface"""
+		WirelessExtension._ioctl_get_freq_map(iface)
+		freq = WirelessExtension._freq_map[str(channel)]
 
 		req = iw_req(iface)/iw_freq(m=freq.m, e=freq.e, i=freq.i, flags=freq.flags)/iw_freq()
 		buff_in_out = array.array('B', str(req))
