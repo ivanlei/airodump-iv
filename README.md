@@ -18,6 +18,7 @@ airodump.py makes uses of scapy	for sniffing and protocol/structure parsing
 
 My interest in this project was kicked off by a wifi penetration class @ Blackhat EU.  Since then I've read quite a few protocol documents.
 * For more on the class: http://www.blackhat.com/eu-13/training/advanced-wifi-penetration-testing.html
+* The class basically followed this book: http://www.amazon.com/BackTrack-Wireless-Penetration-Testing-Beginners/dp/1849515581
 * 802.11 base spec - http://standards.ieee.org/getieee802/download/802.11-2012.pdf
 * 802.11i security spec - http://standards.ieee.org/getieee802/download/802.11i-2004.pdf
 * Radiotap Headers - http://www.radiotap.org/
