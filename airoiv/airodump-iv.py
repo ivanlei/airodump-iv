@@ -100,12 +100,15 @@ class Dot11ScannerOptions:
 		scanner_options.channel_hop = (-1 == options.channel and not options.input_file)
 		scanner_options.max_channel = options.max_channel
 		if -1 == scanner_options.max_channel:
-			try:
-				scanner_options.max_channel = WirelessExtension.get_max_channel(scanner_options.iface)
-				Printer.verbose('CHAN: max_channel[{0}]'.format(scanner_options.max_channel), verbose_level=1)
-			except Exception, e:
-				Printer.exception(e)
-				raise
+			if not options.input_file:
+				try:
+					scanner_options.max_channel = WirelessExtension.get_max_channel(scanner_options.iface)
+					Printer.verbose('CHAN: max_channel[{0}]'.format(scanner_options.max_channel), verbose_level=1)
+				except Exception, e:
+					Printer.exception(e)
+					raise
+			else:
+				scanner_options.max_channel = 14
 
 		scanner_options.packet_count = options.packet_count
 		scanner_options.input_file = options.input_file
@@ -283,10 +286,11 @@ class Dot11Scanner:
 	def _filter_function(self, packet):
 		try:
 			# Verify the RadioTap header, scanner, and WE all match
-			if packet.haslayer(RadioTap):
-				assert (self.scanner_options.input_file or (self.scanner_options.channel == packet[RadioTap].Channel)), 'got[{0}] expect[{1}]'.format(packet[RadioTap].Channel, self.scanner_options.channel)
+			if packet.haslayer(RadioTap) and not self.scanner_options.input_file:
+				assert (self.scanner_options.channel == packet[RadioTap].Channel), 'got[{0}] expect[{1}]'.format(packet[RadioTap].Channel, self.scanner_options.channel)
+
 				channel = WirelessExtension.get_channel(self.scanner_options.iface)
-				assert (self.scanner_options.input_file or (self.scanner_options.channel == channel)), 'got[{0}] expected[{1}]'.format(channel, self.scanner_options.channel)
+				assert (self.scanner_options.channel == channel), 'got[{0}] expected[{1}]'.format(channel, self.scanner_options.channel)
 
 			# Track AP and STA
 			if packet.haslayer(Dot11):
