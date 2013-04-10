@@ -52,6 +52,7 @@ Useful options include:
 
 Interesting TODOs
 =================
+* Implement channel hopping in a standards compliant manner
 * Fix curses mode display to not have quite so many bugs
 * Allow maximum support rate to exceed 54MB
 * Improve station display
