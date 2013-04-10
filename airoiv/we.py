@@ -5,35 +5,20 @@ Utilities for using Wireless Extensions (WE) ioctls
 
 As set of scapy Packet classes model the structs from wireless.h
 """
-import scapy
 import socket
-import sys
 
 from fcntl import ioctl
 from scapy.fields import array
-from scapy.fields import BitField
 from scapy.fields import ByteField
-from scapy.fields import ConditionalField
-from scapy.fields import EnumField
-from scapy.fields import Field
-from scapy.fields import FieldLenField
 from scapy.fields import FieldListField
-from scapy.fields import FlagsField
-from scapy.fields import IntField
-from scapy.fields import LEFieldLenField
 from scapy.fields import LEIntField
-from scapy.fields import LELongField
 from scapy.fields import LEShortField
 from scapy.fields import LESignedIntField
-from scapy.fields import PacketField
 from scapy.fields import PacketLenField
-from scapy.fields import PacketListField
-from scapy.fields import ShortField
-from scapy.fields import StrField
 from scapy.fields import StrFixedLenField
 from scapy.packet import Packet
 
-from scapy_ex import *
+from scapy_ex import LESignedShortField
 
 class iw_param(Packet):
 	name = 'iw_param struct'

@@ -2,10 +2,7 @@
 A set of additions and modifications to scapy to assist in parsing dot11
 """
 import scapy
-import sys
-import traceback
 
-from scapy.fields import array
 from scapy.fields import BitField
 from scapy.fields import ByteField
 from scapy.fields import ConditionalField
@@ -14,28 +11,16 @@ from scapy.fields import Field
 from scapy.fields import FieldLenField
 from scapy.fields import FieldListField
 from scapy.fields import FlagsField
-from scapy.fields import IntField
 from scapy.fields import LEFieldLenField
-from scapy.fields import LEIntField
 from scapy.fields import LELongField
 from scapy.fields import LEShortField
-from scapy.fields import LESignedIntField
-from scapy.fields import PacketField
-from scapy.fields import PacketLenField
-from scapy.fields import PacketListField
-from scapy.fields import ShortField
-from scapy.fields import StrField
 from scapy.fields import StrFixedLenField
-from scapy.layers.dot11 import Dot11
-from scapy.layers.dot11 import Dot11Auth
-from scapy.layers.dot11 import Dot11Beacon
 from scapy.layers.dot11 import Dot11Elt
 from scapy.layers.dot11 import Dot11ProbeReq
-from scapy.layers.dot11 import Dot11ProbeResp
-from scapy.layers.dot11 import RadioTap
 from scapy.packet import Packet
 
-BROADCAST_BSSID = 'ff:ff:ff:ff:ff:ff'
+from printer import Printer
+
 
 class SignedByteField(Field):
 	"""Fields for a signed byte"""
@@ -120,7 +105,6 @@ def scapy_layers_dot11_RadioTap_extract_padding(self, s):
 	If all fields have been parsed, the payload length should have decreased RadioTap_len bytes
 	If it has not, there are unparsed fields which should be treated as padding
 	"""
-	post_disset_len = len(s)
 	padding = len(s) - (self.pre_dissect_len - self.RadioTap_len)
 	if padding:
 		return s[padding:], s[:padding]
@@ -138,6 +122,61 @@ scapy.layers.dot11.RadioTap.pre_dissect = scapy_layers_dot11_RadioTap_pre_dissec
 del scapy_layers_dot11_RadioTap_pre_dissect
 
 
+class Dot11EltRates(Packet):
+	"""The rates member contains an array of supported rates"""
+
+	name = '802.11 Rates Information Element'
+
+	# Known rates come from table in 6.5.5.2 of the 802.11 spec
+	known_rates = {
+		  2 :  1,
+		  3 :  1.5,
+		  4 :  2,
+		  5 :  2.5,
+		  6 :  3,
+		  9 :  4.5,
+		 11 :  5.5,
+		 12 :  6,
+		 18 :  9,
+		 22 : 11,
+		 24 : 12,
+		 27 : 13.5,
+		 36 : 18,
+		 44 : 22,
+		 48 : 24,
+		 54 : 27,
+		 66 : 33,
+		 72 : 36,
+		 96 : 48,
+		108 : 54
+	}
+
+	fields_desc = [
+		ByteField('ID', 0),
+		FieldLenField("len", None, "info", "B"),
+		FieldListField('supported_rates', None, ByteField('', 0), count_from=lambda pkt: pkt.len),
+	]
+
+	def post_dissection(self, pkt):
+		self.rates = []
+		for supported_rate in self.supported_rates:
+			# check the msb for each rate
+			rate_msb = supported_rate & 0x80
+			rate_value = supported_rate & 0x7F
+			if rate_msb:
+				# a value of 127 means HT PHY feature is required to join the BSS
+				if 127 != rate_value:
+					self.rates.append(rate_value/2)
+			elif rate_value in Dot11EltRates.known_rates:
+				self.rates.append(Dot11EltRates.known_rates[rate_value])
+
+
+class Dot11EltExtendedRates(Dot11EltRates):
+	"""The rates member contains an additional array of supported rates"""
+
+	name = '802.11 Extended Rates Information Element'
+
+
 class Dot11EltRSN(Packet):
 	"""The enc, cipher, and auth members contain the decoded 'security' details"""
 
@@ -153,6 +192,8 @@ class Dot11EltRSN(Packet):
 					'\x00\x0f\xac\x02': 'PSK' }
 
 	fields_desc = [
+		ByteField('ID', 0),
+		FieldLenField("len", None, "info", "B"),
 		LEShortField('version', 1),
 		StrFixedLenField('group_cipher_suite', '', length=4),
 		LEFieldLenField('pairwise_cipher_suite_count', 1, count_of='pairwise_cipher_suite'),
@@ -184,7 +225,7 @@ class Dot11EltRSN(Packet):
 					self.cipher = self.cipher_suites.get(group_cipher, '')
 					break
 			elif 'WEP' == self.cipher:
-				enc = 'WEP'
+				self.enc = 'WEP'
 			break
 
 		for auth_cipher in self.getfieldval('auth_cipher_suite'):
@@ -218,6 +259,27 @@ def scapy_layers_dot11_Dot11_essid(self):
 	return elt.info if elt else None
 scapy.layers.dot11.Dot11.essid = scapy_layers_dot11_Dot11_essid
 del scapy_layers_dot11_Dot11_essid
+
+
+def scapy_layers_dot11_Dot11_rates(self, id=1):
+	"""Return the payload of the rates Dot11Elt if it exists"""
+	elt = self.find_elt_by_id(id)
+	if elt:
+		try:
+			return Dot11EltRates(str(elt)).rates
+		except Exception, e:
+			Printer.error('Bad Dot11EltRates got[{0:s}]'.format(elt.info))
+			Printer.exception(e)
+	return []
+scapy.layers.dot11.Dot11.rates = scapy_layers_dot11_Dot11_rates
+del scapy_layers_dot11_Dot11_rates
+
+
+def scapy_layers_dot11_Dot11_extended_rates(self):
+	"""Return the payload of the extended rates Dot11Elt if it exists"""
+	return scapy.layers.dot11.Dot11.rates(self, 50)
+scapy.layers.dot11.Dot11.extended_rates = scapy_layers_dot11_Dot11_extended_rates
+del scapy_layers_dot11_Dot11_extended_rates
 
 
 def scapy_layers_dot11_Dot11_sta_bssid(self):
@@ -259,7 +321,7 @@ def scapy_layers_dot11_Dot11_rsn(self):
 	elt = self.find_elt_by_id(48)
 	if elt:
 		try:
-			return Dot11EltRSN(elt.info)
+			return Dot11EltRSN(str(elt))
 		except Exception, e:
 			Printer.error('Bad Dot11EltRSN got[{0:s}]'.format(elt.info))
 			Printer.exception(e)

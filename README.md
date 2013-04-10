@@ -53,7 +53,7 @@ Useful options include:
 Interesting TODOs
 =================
 * Fix curses mode display to not have quite so many bugs
-* Display maximum support rate per AP
+* Allow maximum support rate to exceed 54MB
 * Improve station display
 * Test in clean install of BackTrack 5
 * Test in clean install of Kali Linux

@@ -8,8 +8,6 @@ Current functionality mimics airodump-ng for the most part.
 """
 import curses
 import errno
-import re
-import scapy
 import sys
 import traceback
 
@@ -17,49 +15,17 @@ from datetime import datetime
 from optparse import OptionParser
 from random import randint
 from scapy.all import sniff
-from scapy.fields import array
 from scapy.layers.dot11 import Dot11
 from scapy.layers.dot11 import Dot11Auth
 from scapy.layers.dot11 import Dot11Beacon
-from scapy.layers.dot11 import Dot11Elt
 from scapy.layers.dot11 import Dot11ProbeReq
 from scapy.layers.dot11 import Dot11ProbeResp
 from scapy.layers.dot11 import RadioTap
-from scapy.packet import Packet
 
-from scapy_ex import *
-from we import *
+from printer import Printer
+from we import WirelessExtension
 
-
-class Printer:
-	"""A class for printing messages that respects verbosity levels"""
-	verbose_level = 0
-
-	@staticmethod
-	def verbose(message, verbose_level=1):
-		"""Print a message only if it is within an acceptabe verbosity level"""
-		if Printer.verbose_level >= verbose_level:
-			sys.stdout.write(message)
-			sys.stdout.write('\n')
-
-	@staticmethod
-	def write(message):
-		"""Write a message to stdout"""
-		sys.stdout.write(message)
-		sys.stdout.write('\n')
-
-	@staticmethod
-	def error(message):
-		"""Write a message to stderr"""
-		sys.stderr.write(message)
-		sys.stderr.write('\n')
-
-	@staticmethod
-	def exception(e):
-		"""Write a summary of an exception with a stack trace"""
-		Printer.error(repr(e))
-		traceback.print_exc(file=sys.stderr)
-
+BROADCAST_BSSID = 'ff:ff:ff:ff:ff:ff'
 
 class Dot11ScannerOptions:
 	"""A collection of options to control how the script runs"""
@@ -134,6 +100,7 @@ class AccessPoint:
 		self.auth = ''
 		self.hidden_essid = False
 		self.power = 0
+		self.max_rate = 0
 
 		self.display_row = -1
 
@@ -143,7 +110,11 @@ class AccessPoint:
 			self.essid = essid
 
 		self.channel = packet[Dot11].channel() or packet[RadioTap].Channel
-		if packet.haslayer(Dot11Beacon):
+
+		is_beacon = packet.haslayer(Dot11Beacon)
+		is_probe_resp = packet.haslayer(Dot11ProbeResp)
+
+		if is_beacon:
 			self.beacon_count += 1
 			self.hidden_essid = (not essid)
 
@@ -162,8 +133,14 @@ class AccessPoint:
 				self.cipher = ''
 				self.auth = ''
 
-		elif packet.haslayer(Dot11ProbeResp):
+		elif is_probe_resp:
 			self.sta_bssids.add(packet[Dot11].sta_bssid())
+
+		if is_beacon or is_probe_resp:
+			rates = packet[Dot11].rates()
+			rates.extend(packet[Dot11].extended_rates())
+			if rates:
+				self.max_rate = max(rates)
 
 		if self.bssid == packet[Dot11].addr2:
 			power = packet[RadioTap].dBm_AntSignal
@@ -176,12 +153,13 @@ class AccessPoint:
 
 		hidden = 'YES' if self.hidden_essid else 'NO'
 
-		summary = '{0:<18} {1: >4d} {2: >7d} {3: >5d} {4: >2d} {5:<4} {6:<6} {7:<4} {8: >3} {9:<32} '.format(
+		summary = '{0:<18} {1: >4d} {2: >7d} {3: >5d} {4: >2d} {5:<4} {6:<4} {7:<6} {8:<4} {9: >3} {10:<32} '.format(
 			self.bssid,
 			self.power,
 			self.beacon_count,
 			self.data_count,
 			self.channel,
+			self.max_rate,
 			self.enc,
 			self.cipher,
 			self.auth,
@@ -374,7 +352,7 @@ class Dot11Scanner:
 
 	def print_results(self):
 		Printer.write('\n\n')
-		Printer.write('{0:<18} {1:>4} {2:<7} {3:5} {4:2} {5:<4} {6:<6} {7:<4} {8:3} {9:<32}'.format('BSSID', 'PWR', 'BEACONS', '#DATA', 'CH', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID'))
+		Printer.write('{0:<18} {1:>4} {2:<7} {3:5} {4:2} {5:<4} {6:<4} {7:<6} {8:<4} {9:3} {10:<32}'.format('BSSID', 'PWR', 'BEACONS', '#DATA', 'CH', 'MB', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID'))
 		for access_point in self.access_points.values():
 			Printer.write(access_point.show(bssid_to_essid=self.bssid_to_essid))
 
@@ -400,7 +378,7 @@ class Display:
 				pass
 
 		self.window.clear()
-		header = '{0:<18} {1:>4} {2:<7} {3:5} {4:2} {5:<4} {6:<6} {7:<4} {8:3} {9:<32}'.format('BSSID', 'PWR', 'BEACONS', '#DATA', 'CH', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID')
+		header = '{0:<18} {1:>4} {2:<7} {3:5} {4:2} {5:<4} {6:<4} {7:<6} {8:<4} {9:3} {10:<32}'.format('BSSID', 'PWR', 'BEACONS', '#DATA', 'CH', 'MB', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID')
 		self.addstr(self.free_row, header)
 		self.free_row += 2
 		self.window.refresh()
