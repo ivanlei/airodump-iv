@@ -153,7 +153,7 @@ class AccessPoint:
 
 		hidden = 'YES' if self.hidden_essid else 'NO'
 
-		summary = '{0:<18} {1: >4d} {2: >7d} {3: >5d} {4: >2d} {5:<4} {6:<4} {7:<6} {8:<4} {9: >3} {10:<32} '.format(
+		summary = '{0:<18} {1: >3d} {2: >5d} {3: >5d} {4: >2d} {5:<4} {6:<4} {7:<4} {8:<4} {9: >3} {10:<32} '.format(
 			self.bssid,
 			self.power,
 			self.beacon_count,
@@ -267,8 +267,8 @@ class Dot11Scanner:
 			if packet.haslayer(RadioTap) and not self.scanner_options.input_file:
 				assert (self.scanner_options.channel == packet[RadioTap].Channel), 'got[{0}] expect[{1}]'.format(packet[RadioTap].Channel, self.scanner_options.channel)
 
-				channel = WirelessExtension.get_channel(self.scanner_options.iface)
-				assert (self.scanner_options.channel == channel), 'got[{0}] expected[{1}]'.format(channel, self.scanner_options.channel)
+				# channel = WirelessExtension.get_channel(self.scanner_options.iface)
+				# assert (self.scanner_options.channel == channel), 'got[{0}] expected[{1}]'.format(channel, self.scanner_options.channel)
 
 			# Track AP and STA
 			if packet.haslayer(Dot11):
@@ -352,7 +352,7 @@ class Dot11Scanner:
 
 	def print_results(self):
 		Printer.write('\n\n')
-		Printer.write('{0:<18} {1:>4} {2:<7} {3:5} {4:2} {5:<4} {6:<4} {7:<6} {8:<4} {9:3} {10:<32}'.format('BSSID', 'PWR', 'BEACONS', '#DATA', 'CH', 'MB', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID'))
+		Printer.write('{0:<18} {1:>3} {2:5} {3:5} {4:2} {5:<4} {6:<4} {7:<4} {8:<4} {9:3} {10:<32}'.format('BSSID', 'PWR', '#BEAC', '#DATA', 'CH', 'MB', 'ENC', 'CIPH', 'AUTH', 'HID', 'ESSID'))
 		for access_point in self.access_points.values():
 			Printer.write(access_point.show(bssid_to_essid=self.bssid_to_essid))
 
@@ -378,7 +378,7 @@ class Display:
 				pass
 
 		self.window.clear()
-		header = '{0:<18} {1:>4} {2:<7} {3:5} {4:2} {5:<4} {6:<4} {7:<6} {8:<4} {9:3} {10:<32}'.format('BSSID', 'PWR', 'BEACONS', '#DATA', 'CH', 'MB', 'ENC', 'CIPHER', 'AUTH', 'HID', 'ESSID')
+		header = '{0:<18} {1:>3} {2:5} {3:5} {4:2} {5:<4} {6:<4} {7:<4} {8:<4} {9:3} {10:<32}'.format('BSSID', 'PWR', '#BEAC', '#DATA', 'CH', 'MB', 'ENC', 'CIPH', 'AUTH', 'HID', 'ESSID')
 		self.addstr(self.free_row, header)
 		self.free_row += 2
 		self.window.refresh()
@@ -437,3 +437,4 @@ def main():
 
 if __name__ == '__main__':
 	main()
+
