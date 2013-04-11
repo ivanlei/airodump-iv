@@ -7,7 +7,7 @@ airodump-iv is probably inferior in a lot of ways to airodump-ng but is being wr
 
 Currently the only feature in airodump-iv not in airodump-ng is clearly identifying the SSIDs for hidden networks (when possible).
 
-airodump.py is being developed in a BackTrack 5  R3 VM with an Alpha AWUS036H wireless case
+airodump.py is being developed in a BackTrack 5 R3 VM with an Alpha AWUS036H wireless card
 * For more BackTrack: http://www.backtrack-linux.org/
 * For more Alpha AWUS036H: https://www.google.com/search?q=Alpha+AWUS036H
 ``TODO``
@@ -26,8 +26,6 @@ My interest in this project was kicked off by a wifi penetration class @ Blackha
 
 Installation & Running
 ======================
-
-Currently under	active development, airodump-iv	has no installer.
 
 Steps to run include:
 * Grab the code:
@@ -50,15 +48,16 @@ Useful options include:
 * ``-v`` - Verbose mode.  Does not play	well with curses mode.
 * ``--no-curses`` - Disable the curses interface.
 
+VirtualBox VM
+=============
+A Ubuntu precise Vagrantfile is included in the project.  ``airoiv_config.sh`` prepares the precise image with the necessary dependencies to run airodump-iv
+
 Interesting TODOs
 =================
 * Implement channel hopping in a standards compliant manner
 * Fix curses mode display to not have quite so many bugs
 * Allow maximum support rate to exceed 54MB
 * Improve station display
-* Test in clean install of BackTrack 5
-* Test in clean install of Kali Linux
-* Document setup necessary on clean install of lucid/precise
 * Test with other wifi cards
 * Write unit tests
 * Cleanup code
