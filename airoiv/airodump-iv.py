@@ -21,6 +21,7 @@ from scapy.layers.dot11 import Dot11Beacon
 from scapy.layers.dot11 import Dot11ProbeReq
 from scapy.layers.dot11 import Dot11ProbeResp
 from scapy.layers.dot11 import RadioTap
+import scapy_ex
 
 from printer import Printer
 from we import WirelessExtension
@@ -62,13 +63,14 @@ class Dot11ScannerOptions:
 
 		scanner_options = Dot11ScannerOptions()
 		scanner_options.iface = options.iface
+		scanner_options.we = WirelessExtension(scanner_options.iface)
 		scanner_options.channel = options.channel
 		scanner_options.channel_hop = (-1 == options.channel and not options.input_file)
 		scanner_options.max_channel = options.max_channel
 		if -1 == scanner_options.max_channel:
 			if not options.input_file:
 				try:
-					scanner_options.max_channel = WirelessExtension.get_max_channel(scanner_options.iface)
+					scanner_options.max_channel = scanner_options.we.get_max_channel()
 					Printer.verbose('CHAN: max_channel[{0}]'.format(scanner_options.max_channel), verbose_level=1)
 				except Exception, e:
 					Printer.exception(e)
@@ -264,10 +266,10 @@ class Dot11Scanner:
 	def _filter_function(self, packet):
 		try:
 			# Verify the RadioTap header, scanner, and WE all match
-			if packet.haslayer(RadioTap) and not self.scanner_options.input_file:
-				assert (self.scanner_options.channel == packet[RadioTap].Channel), 'got[{0}] expect[{1}]'.format(packet[RadioTap].Channel, self.scanner_options.channel)
+			# if packet.haslayer(RadioTap) and not self.scanner_options.input_file:
+				# assert (self.scanner_options.channel == packet[RadioTap].Channel), 'got[{0}] expect[{1}]'.format(packet[RadioTap].Channel, self.scanner_options.channel)
 
-				# channel = WirelessExtension.get_channel(self.scanner_options.iface)
+				# channel = self.scanner_options.we.get_channel()
 				# assert (self.scanner_options.channel == channel), 'got[{0}] expected[{1}]'.format(channel, self.scanner_options.channel)
 
 			# Track AP and STA
@@ -342,11 +344,16 @@ class Dot11Scanner:
 				if e.args and e.args[0] == errno.EINTR:
 					pass
 				else:
+					Printer.exception(e)
 					raise
 
 	def set_channel(self, channel):
 		Printer.verbose('CHAN: set_channel {0}'.format(channel), verbose_level=3)
-		WirelessExtension.set_channel(self.scanner_options.iface, channel)
+		try:
+			self.scanner_options.we.set_channel(channel)
+		except Exception, e:
+			Printer.exception(e)
+
 		if self.display:
 			self.display.update_header()
 
