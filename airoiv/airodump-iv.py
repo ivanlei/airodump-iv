@@ -312,12 +312,11 @@ class Dot11Scanner:
 		else:
 			self.display = None
 
-		timeout = None
+		timeout = 5
 
 		if self.scanner_options.channel_hop:
 			self.scanner_options.channel = randint(1, self.scanner_options.max_channel)
 			self.set_channel(self.scanner_options.channel)
-			timeout = 5
 		elif -1 != self.scanner_options.channel:
 			self.set_channel(self.scanner_options.channel)
 
@@ -330,8 +329,12 @@ class Dot11Scanner:
 					  timeout=timeout,
 					  lfilter=self._filter_function)
 				if timeout:
-					self.scanner_options.channel = ((self.scanner_options.channel + 3) % self.scanner_options.max_channel) + 1
-					self.set_channel(self.scanner_options.channel)
+					if self.display:
+						self.display.update_header()
+
+					if self.scanner_options.channel_hop:
+						self.scanner_options.channel = ((self.scanner_options.channel + 3) % self.scanner_options.max_channel) + 1
+						self.set_channel(self.scanner_options.channel)
 				else:
 					break
 
