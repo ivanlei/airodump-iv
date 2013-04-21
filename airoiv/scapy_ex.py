@@ -218,15 +218,16 @@ class Dot11EltRSN(Packet):
 		self.cipher = ''
 		self.auth = ''
 
-		for pairwise_cipher in self.getfieldval('pairwise_cipher_suite'):
-			self.cipher = self.cipher_suites.get(pairwise_cipher, '')
-			if 'GROUP' == self.cipher: # Must look at the group_cipher_suite
-				for group_cipher in self.getfieldval('group_cipher_suite'):
-					self.cipher = self.cipher_suites.get(group_cipher, '')
-					break
-			elif 'WEP' == self.cipher:
-				self.enc = 'WEP'
-			break
+		ciphers = [self.cipher_suites.get(pairwise_cipher) for pairwise_cipher in self.getfieldval('pairwise_cipher_suite')]
+		if 'GROUP' in ciphers:
+			ciphers = [self.cipher_suites.get(group_cipher, '') for group_cipher in self.getfieldval('group_cipher_suite')]
+		for cipher in ['CCMP', 'TKIP', 'WEP']:
+			if cipher in ciphers:
+				self.cipher = cipher
+				break
+
+		if 'WEP' == self.cipher:
+			self.enc = 'WEP'
 
 		for auth_cipher in self.getfieldval('auth_cipher_suite'):
 			self.auth = self.auth_suites.get(auth_cipher, '')

@@ -123,6 +123,7 @@ class AccessPoint:
 			if packet.hasflag('cap', 'privacy'):
 				elt_rsn = packet[Dot11].rsn()
 				if elt_rsn:
+					Printer.write('Packets has RSN')
 					self.enc = elt_rsn.enc
 					self.cipher = elt_rsn.cipher
 					self.auth = elt_rsn.auth
@@ -300,19 +301,16 @@ class Dot11Scanner:
 		finally:
 			return False
 
-	def seconds_elapsed(self):
-		time_delta = datetime.now() - self.scan_start_time
-		return (time_delta.microseconds + (time_delta.seconds + time_delta.days * 24 * 3600) * 10**6) / 10**6
-
 	def scan(self, window = None):
-		self.scan_start_time = datetime.now()
-
 		if window:
 			self.display = Display(window, self)
 		else:
 			self.display = None
 
-		timeout = 5
+		if not self.scanner_options.input_file:
+			timeout = 5
+		else:
+			timeout = None
 
 		if self.scanner_options.channel_hop:
 			self.scanner_options.channel = randint(1, self.scanner_options.max_channel)
@@ -329,6 +327,13 @@ class Dot11Scanner:
 					  timeout=timeout,
 					  lfilter=self._filter_function)
 				if timeout:
+					try:
+						ch = self.display.window.getkey()
+						if 'q' == ch:
+							break
+					except:
+						pass
+
 					if self.display:
 						self.display.update_header()
 
@@ -375,6 +380,7 @@ class Display:
 		self.window = window
 		self.scanner = scanner
 		self.free_row = 2
+		self.start_time = datetime.now()
 
 		curses.use_default_colors()
 
@@ -387,23 +393,37 @@ class Display:
 			except:
 				pass
 
+		self.window.nodelay(1)
 		self.window.clear()
 		header = '{0:<18} {1:>3} {2:5} {3:5} {4:2} {5:<4} {6:<4} {7:<4} {8:<4} {9:3} {10:<32}'.format('BSSID', 'PWR', '#BEAC', '#DATA', 'CH', 'MB', 'ENC', 'CIPH', 'AUTH', 'HID', 'ESSID')
-		self.addstr(self.free_row, header)
+		self._addstr(self.free_row, header)
 		self.free_row += 2
-		self.window.refresh()
+		self.update_header()
 
-	def addstr(self, row, msg):
+
+	def _addstr(self, row, msg):
 		self.window.addstr(row, 0, msg)
 		self.window.clrtoeol()
 		self.window.move(0,0)
 
-	def update_header(self):
+
+	def _seconds_elapsed(self):
+		time_delta = datetime.now() - self.start_time
+		return (time_delta.microseconds + (time_delta.seconds + time_delta.days * 24 * 3600) * 10**6) / 10**6
+
+
+	def _update_header(self):
 		header = ' CH {0:>2d}][ Elapsed {1:d}s][ {2:s}'.format(
 			self.scanner.scanner_options.channel,
-			self.scanner.seconds_elapsed(),
+			self._seconds_elapsed(),
 		    datetime.now().strftime('%x %X'))
-		self.addstr(0, header)
+		self._addstr(0, header)
+
+
+	def update_header(self):
+		self._update_header()
+		self.window.refresh()
+
 
 	def update(self, access_point):
 
@@ -413,7 +433,7 @@ class Display:
 			self.free_row += 1
 
 		# Update a full line and don't leave the cursor at the end of the line
-		self.addstr(access_point.display_row, access_point.show(bssid_to_essid=self.scanner.bssid_to_essid))
+		self._addstr(access_point.display_row, access_point.show(bssid_to_essid=self.scanner.bssid_to_essid))
 
 		# Update Headers
 		self.update_header()
