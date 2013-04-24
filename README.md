@@ -7,9 +7,10 @@ airodump-iv is probably inferior in a lot of ways to airodump-ng but is being wr
 
 Currently the only feature in airodump-iv not in airodump-ng is clearly identifying the SSIDs for hidden networks (when possible).
 
-airodump.py is being developed in a BackTrack 5 R3 VM with an Alpha AWUS036H wireless card
+airodump.py is being developed in ubuntu precise with an Alpha AWUS036H or D-Link DWA-123 wireless card.
 * For more BackTrack: http://www.backtrack-linux.org/
 * For more Alpha AWUS036H: https://www.google.com/search?q=Alpha+AWUS036H
+* For more D-Link DWA-123: http://www.dlink.co.in/products/?pid=528
 ``TODO``
 
 airodump.py makes uses of scapy	for sniffing and protocol/structure parsing
@@ -30,6 +31,8 @@ Installation & Running
 Steps to run include:
 * Grab the code:
   * ``git clone git://github.com/ivanlei/airodump-iv.git``
+  * ``git submodule init``
+  * ``git submodule update``
   * ``cd airodump-iv/airoiv``
 * Set wireless card into monitor mode:
   * ``sudo airmon-ng check kill``
@@ -50,13 +53,22 @@ Useful options include:
 
 VirtualBox VM
 =============
-A Ubuntu precise Vagrantfile is included in the project.  ``airoiv_config.sh`` prepares the precise image with the necessary dependencies to run airodump-iv
+A Ubuntu precise Vagrantfile is included in the project.  It will use puppet standalone to configure a clean wifi test environment in VirtualBox that includes airocrack-ng (from unofficial apt repo), iw tools, wireless-tools, and the contents of this repo.
+
+After installing Vagrant and Virtualbox:
+* Boot the box:
+  * ``cd airodump-iv/Vagrant``
+  * ``vagrant up airoiv01``
+  * ``vagrant ssh airoiv01``
+* Let the box see a usb wifi adapter.  From the host:
+  * ``vboxmanage list usbhost``  and find the UUID of the USB device
+  * ``vboxmanage list vms`` and find the UUID of the vm
+  * ``vboxmanager controlvm <UUID-of-vm> usbattach <UUID-of-usb-device>``
 
 Interesting TODOs
 =================
 * Implement channel hopping in a standards compliant manner
 * Fix curses mode display to not have quite so many bugs
-* Allow maximum support rate to exceed 54MB
 * Improve station display
 * Test with other wifi cards
 * Write unit tests
