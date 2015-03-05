@@ -14,6 +14,7 @@ from ctypes import cast
 from ctypes import c_int
 from ctypes import c_uint
 from ctypes import c_byte
+from ctypes import c_ubyte
 from ctypes import c_short
 from ctypes import c_ushort
 from ctypes import c_void_p
@@ -51,7 +52,7 @@ class IW_QUALITY(Structure):
 class IW_FREQ(Structure):
 	_fields_ = [('m', c_int),
 				('e', c_short),
-				('i', c_byte),
+				('i', c_ubyte),
 				('flags', c_byte)]
 
 
