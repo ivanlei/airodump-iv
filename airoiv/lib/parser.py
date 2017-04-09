@@ -7,7 +7,7 @@ class Names(object):
 
     def drivers(self, val):
         """Driver offsets for RadioTap Headers"""
-        typeDict = {'ath9k': 19,
-                    'ath9k_htc': 19,
-                    'wl12xx': 11}
+        typeDict = {'ath9k': 0,
+                    'ath9k_htc': 0,
+                    'wl12xx': -8}
         return typeDict.get(val)

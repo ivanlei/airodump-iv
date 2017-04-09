@@ -12,6 +12,8 @@ TODO:
     ## Add STA capabilities
     ## Add switcheroo capabilitiy via 'a' like airodump-ng
     ## Add pause capability via 'space' like airodump-ng
+    ## Add AUTH column info
+    ## Switch sniff() methodology to prn -vs- lfilter
 """
 import curses
 import errno
@@ -19,26 +21,22 @@ import logging
 import sys
 import traceback
 
-logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
-
 from datetime import datetime
 from optparse import OptionParser
 from random import randint
 from lib.os_control import Control
 from lib.unifier import Unify
 
-### Need to breakdown * vs the imports so this is clean
-#from scapy.all import sniff
-#from scapy.layers.dot11 import Dot11
-#from scapy.layers.dot11 import Dot11Auth
-#from scapy.layers.dot11 import Dot11Beacon
-#from scapy.layers.dot11 import Dot11ProbeReq
-#from scapy.layers.dot11 import Dot11ProbeResp
-#from scapy.layers.dot11 import RadioTap
-
-## Temporary * workaround
-from scapy.all import *
-
+logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
+from scapy.all import sniff
+from scapy.layers.dot11 import Dot11
+from scapy.layers.dot11 import Dot11Auth
+from scapy.layers.dot11 import Dot11Beacon
+from scapy.layers.dot11 import Dot11Elt
+from scapy.layers.dot11 import Dot11ProbeReq
+from scapy.layers.dot11 import Dot11ProbeResp
+from scapy.layers.dot11 import RadioTap
+from scapy.utils import hexstr
 from printer import Printer
 from we import WirelessExtension
 
@@ -155,35 +153,17 @@ class AccessPoint(object):
         self.unity = unity
 
 
-    def pktInfo(self, pkt):
-        vDict = {}
-        vDict.update({self.symString(pkt, pkt.ID, 'ID'): pkt.info})
-        while pkt.payload:
-            pkt = pkt.payload
-            if pkt.name == '802.11 Information Element':
-                vDict.update({self.symString(pkt, pkt.ID, 'ID'): pkt.info})
-        return vDict
-
-    def symString(self, packet, pField, fString):
-        """Shows the symblic string for a given field
-
-        Where p is UDP(), and you want p.dport symbolically:
-            symString(p, p.dport, 'dport')
-        
-        Where p is UDP()/DNS(), and you want p[DNS].opcode symbolically:
-            symString(p[DNS], p[DNS].opcode, 'opcode')
-        """
-        return packet.get_field(fString).i2repr(packet, pField)
-
-
     def update(self, packet):
         global c1
         global c2
+        global c3
         
         ## Set ESSID
-        elemDict = self.pktInfo(packet[Dot11Elt])
+        elemDict = pktInfo(packet[Dot11Elt])
         essid = elemDict.get('SSID')
         self.essid = essid
+        #c1 = packet
+        #c2 = elemDict
 
         ## Set Channel
         try:
@@ -199,34 +179,57 @@ class AccessPoint(object):
             self.hidden_essid = (not essid)
 
             ## Deal with Open WIFI
-            try:
-                if not 'privacy' in self.symString(packet[Dot11Beacon],
-                                                packet[Dot11Beacon].cap,
-                                                'cap'):
-                    self.enc = 'OPN'
-                    self.cipher = 'OPN'
+            if not 'privacy' in symString(packet[Dot11Beacon],
+                                            packet[Dot11Beacon].cap,
+                                            'cap'):
+                self.enc = 'OPN'
 
-                ## Deal with Encrypted WIFI
+            ## Deal with Encrypted WIFI
+            else:
+                cipherType = hexstr(str(packet), onlyhex =1)
+                
+                ## Offsets are different here, delta of 10 versus 8
+                if 'ath9k' in self.unity.iwDriver:
+                    cipherType = cipherType[141 * 3:141 * 3 + 4 * 3 - 1]
                 else:
+                    cipherType = cipherType[(self.unity.offset - 2 + 141) * 3:(self.unity.offset - 2 + 141) * 3 + 4 * 3 - 1]
                     
-                    ## WEP
-                    if elemDict.get('RSNinfo') is None:
-                        self.enc = 'WEP'
-                        self.cipher = 'RC4'
+                c1 = packet
+                c2 = elemDict
+                c3 = cipherType
 
-                    ## WPA
-                    else:
-                        self.enc = 'WPA'
-                        
-                        ## TKIP
+                if elemDict.get('RSNinfo') is not None:
+
+                    ## WPA2/TKIP
+                    try:
                         if ord(elemDict.get('RSNinfo')[5]) == 2:
                             self.cipher = 'TKIP'
-                        elif ord(elemDict.get('RSNinfo')[5]) == 4:
+                            self.enc = 'WPA2'
+                    except:
+                        pass
+
+                    ## WPA2/CCMP
+                    try:
+                        if ord(elemDict.get('RSNinfo')[5]) == 4:
                             self.cipher = 'CCMP'
-                        else:
-                            self.cipher = 'XXXX'
-            except:
-                pass
+                            self.enc = 'WPA2'
+                    except:
+                        pass
+
+                ## WPA1/TKIP
+                elif cipherType == '00 50 f2 02':
+                    self.cipher = 'TKIP'
+                    self.enc = 'WPA'
+
+                ## WPA1/CCMP
+                elif cipherType == '00 50 f2 04':
+                    self.cipher = 'CCMP'
+                    self.enc = 'WPA'
+
+                ## WEP/RC4
+                else:
+                    self.cipher = 'RC4'
+                    self.enc = 'WEP'
                         
             
         elif is_probe_resp:
@@ -241,7 +244,7 @@ class AccessPoint(object):
 
         ## Set power
         if self.bssid == packet[Dot11].addr2:
-            power = -(256 - int(hexstr(str(packet), onlyhex = 1).split(' ')[30], 16))
+            power = -(256 - int(hexstr(str(packet), onlyhex = 1).split(' ')[30 + self.unity.offset], 16))
             if power:
                 self.power = power
 
@@ -378,6 +381,10 @@ class Dot11Scanner(object):
             if packet.haslayer(Dot11):
 
                 ap = None
+
+                ### DEBUG point for tracing out specific ESSIDs
+                #if packet.haslayer('Dot11Beacon') and packet[Dot11Elt].info == 'wep':
+
                 if packet.haslayer('Dot11Beacon'):
                     ap = self._update_access_points(packet)
 
@@ -409,16 +416,6 @@ class Dot11Scanner(object):
             Printer.exception(exc)
         finally:
             return False
-
-    def pktInfo(pkt):
-        vDict = {}
-        vDict.update({symString(pkt, pkt.ID, 'ID'): pkt.info})
-        while pkt.payload:
-            pkt = pkt.payload
-            if pkt.name == '802.11 Information Element':
-                vDict.update({symString(pkt, pkt.ID, 'ID'): pkt.info})
-        return vDict
-
 
 
     def scan(self, window = None):
@@ -513,17 +510,6 @@ class Dot11Scanner(object):
                 Printer.write(station.show(bssid_to_essid = self.bssid_to_essid))
 
 
-    def symString(packet, pField, fString):
-        """Shows the symblic string for a given field
-
-        Where p is UDP(), and you want p.dport symbolically:
-            symString(p, p.dport, 'dport')
-        
-        Where p is UDP()/DNS(), and you want p[DNS].opcode symbolically:
-            symString(p[DNS], p[DNS].opcode, 'opcode')
-        """
-        return packet.get_field(fString).i2repr(packet, pField)
-
 
 class Display:
 
@@ -601,22 +587,42 @@ class Display:
 
 
 
-def main():
+def pktInfo(pkt):
+    """Retrieve extended info for 802.11 packets
+    Return a dictionary of the elements for parsing
+    """
+    vDict = {}
+    vDict.update({symString(pkt, pkt.ID, 'ID'): pkt.info})
+    while pkt.payload:
+        pkt = pkt.payload
+        if pkt.name == '802.11 Information Element':
+            vDict.update({symString(pkt, pkt.ID, 'ID'): pkt.info})
+    return vDict
 
+
+def symString(packet, pField, fString):
+    """Shows the symblic string for a given field
+
+    Where p is UDP(), and you want p.dport symbolically:
+        symString(p, p.dport, 'dport')
+    
+    Where p is UDP()/DNS(), and you want p[DNS].opcode symbolically:
+        symString(p[DNS], p[DNS].opcode, 'opcode')
+    """
+    return packet.get_field(fString).i2repr(packet, pField)
+
+
+def main():
     try:
         scanner_options = Dot11ScannerOptions.create_scanner_options()
-        
 
-        ### This is instantiated, but not in use yet.
         ## Notate the driver in use
         control = Control(scanner_options.iface)
         iwDriver = control.iwDriver()
         
-        ## Instantiate unity
+        ## Instantiate unity and scanner
         unity = Unify(iwDriver)
-        
         scanner = Dot11Scanner(scanner_options, unity)
-
 
         try:
             if scanner_options.enable_curses:
@@ -639,6 +645,7 @@ if __name__ == '__main__':
     ## Global traps for debugging
     c1 = ''
     c2 = ''
+    c3 = ''
     
     ## Run main()
     main()
