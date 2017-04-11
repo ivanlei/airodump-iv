@@ -31,14 +31,15 @@ Installation & Running
 Steps to run include:
 * Grab the code:
   * ``git clone git://github.com/ivanlei/airodump-iv.git``
+  * ``cd airodump-iv``
   * ``git submodule init``
   * ``git submodule update``
-  * ``cd airodump-iv/airoiv``
+  * ``pip install airodump-iv-0.2.tar.gz``
 * Set wireless card into monitor mode:
   * ``sudo airmon-ng check kill``
   * ``sudo airmon-ng start wlan0``
 * Once the card	is in monitor mode:
-  * ``sudo python airodump-iv.py``
+  * ``sudo python airodump-iv``
 * To exit
   * ``CTRL-C`` (... repeatedly sometimes)
 
