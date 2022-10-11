@@ -1,0 +1,57 @@
+#!/usr/bin/python2.7
+
+"""
+airdump-iv is a utility which sniffs 802.11X activity
+
+The goal of this script is to aggregate the functionality of tools like
+airmon-ng and airodump-ng into a single easily extendable python tool.
+
+Current functionality mimics airodump-ng for the most part.
+
+TODO:
+    ## Add STA capabilities
+    ## Add switcheroo capabilitiy via 'a' like airodump-ng
+    ## Add pause capability via 'space' like airodump-ng
+    ## Add AUTH column info
+    ## Switch sniff() methodology to prn -vs- lfilter
+"""
+
+from airodump_iv import *
+
+def main():
+    try:
+        scanner_options = Dot11ScannerOptions.create_scanner_options()
+
+        ## Notate the driver in use
+        control = Control(scanner_options.iface)
+        iwDriver = control.iwDriver()
+        
+        ## Instantiate unity and scanner
+        unity = Unify(iwDriver)
+        scanner = Dot11Scanner(scanner_options, unity)
+
+        try:
+            if scanner_options.enable_curses:
+                curses.wrapper(scanner.scan)
+            else:
+                scanner.scan()
+        except Exception, e:
+            Printer.exception(e)
+
+        ## Run with or without curses support, but finish in either case by printing a complete report
+        if scanner:
+            scanner.print_results()
+
+    except Exception, e:
+        sys.stderr.write(repr(e))
+        traceback.print_exc(file=sys.stderr)
+
+
+if __name__ == '__main__':
+    ## Global traps for debugging
+    c1 = ''
+    c2 = ''
+    c3 = ''
+    
+    ## Run main()
+    main()
